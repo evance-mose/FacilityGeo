@@ -7,6 +7,19 @@
   <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css">
   <style>
     html, body, #map { margin: 0; height: 100%; }
+    .legend {
+      background: #fff;
+      padding: 8px 10px;
+      line-height: 1.4;
+      font: 13px/1.4 sans-serif;
+    }
+    .legend i {
+      display: inline-block;
+      width: 10px;
+      height: 10px;
+      margin-right: 6px;
+      border-radius: 50%;
+    }
   </style>
 </head>
 <body>
@@ -17,6 +30,44 @@
     L.tileLayer("https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png", {
       attribution: "&copy; OpenStreetMap"
     }).addTo(map);
+
+    const colors = {
+      live: "#2e7d32",
+      in_progress: "#ef6c00",
+      not_started: "#c62828",
+      blocked: "#546e7a"
+    };
+
+    fetch("/api/facilities.geojson")
+      .then((response) => response.json())
+      .then((geojson) => {
+        L.geoJSON(geojson, {
+          pointToLayer: (feature, latlng) => L.circleMarker(latlng, {
+            radius: 8,
+            color: "#fff",
+            weight: 1,
+            fillColor: colors[feature.properties.mahis_status] || "#333",
+            fillOpacity: 0.9
+          }),
+          onEachFeature: (feature, layer) => {
+            const p = feature.properties;
+            layer.bindPopup(
+              `<strong>${p.name}</strong><br>${p.facility_type}<br>${p.district} · ${p.mahis_status}`
+            );
+          }
+        }).addTo(map);
+      });
+
+    const legend = L.control({ position: "bottomleft" });
+    legend.onAdd = () => {
+      const div = L.DomUtil.create("div", "legend");
+      div.innerHTML = "<strong>MaHIS status</strong><br>" +
+        Object.entries(colors).map(
+          ([status, color]) => `<i style="background:${color}"></i>${status}`
+        ).join("<br>");
+      return div;
+    };
+    legend.addTo(map);
   </script>
 </body>
 </html>
