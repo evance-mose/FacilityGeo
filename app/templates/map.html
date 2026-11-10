@@ -38,25 +38,48 @@
       blocked: "#546e7a"
     };
 
-    fetch("/api/facilities.geojson")
-      .then((response) => response.json())
-      .then((geojson) => {
-        L.geoJSON(geojson, {
-          pointToLayer: (feature, latlng) => L.circleMarker(latlng, {
-            radius: 8,
-            color: "#fff",
-            weight: 1,
-            fillColor: colors[feature.properties.mahis_status] || "#333",
-            fillOpacity: 0.9
-          }),
-          onEachFeature: (feature, layer) => {
-            const p = feature.properties;
-            layer.bindPopup(
-              `<strong>${p.name}</strong><br>${p.facility_type}<br>${p.district} · ${p.mahis_status}`
-            );
+    Promise.all([
+      fetch("/api/facilities.geojson").then((response) => response.json()),
+      fetch("/api/officers.geojson").then((response) => response.json())
+    ]).then(([facilities, officers]) => {
+      L.geoJSON(facilities, {
+        pointToLayer: (feature, latlng) => L.circleMarker(latlng, {
+          radius: 8,
+          color: "#fff",
+          weight: 1,
+          fillColor: colors[feature.properties.mahis_status] || "#333",
+          fillOpacity: 0.9
+        }),
+        onEachFeature: (feature, layer) => {
+          const p = feature.properties;
+          const [lng, lat] = feature.geometry.coordinates;
+          layer.bindPopup(
+            `<strong>${p.name}</strong><br>${p.facility_type}<br>` +
+            `${p.district} · ${p.mahis_status}<br>` +
+            `Nearest officer: ${p.nearest_officer} (${p.nearest_officer_km} km)`
+          );
+          if (p.officer_lat != null && p.officer_lng != null) {
+            L.polyline(
+              [[p.officer_lat, p.officer_lng], [lat, lng]],
+              { color: "#1565c0", weight: 1, dashArray: "4 4", opacity: 0.6 }
+            ).addTo(map);
           }
-        }).addTo(map);
-      });
+        }
+      }).addTo(map);
+
+      L.geoJSON(officers, {
+        pointToLayer: (feature, latlng) => L.circleMarker(latlng, {
+          radius: 7,
+          color: "#fff",
+          weight: 1,
+          fillColor: "#1565c0",
+          fillOpacity: 1
+        }),
+        onEachFeature: (feature, layer) => {
+          layer.bindPopup(`<strong>${feature.properties.name}</strong><br>Support officer`);
+        }
+      }).addTo(map);
+    });
 
     const legend = L.control({ position: "bottomleft" });
     legend.onAdd = () => {
@@ -64,7 +87,8 @@
       div.innerHTML = "<strong>MaHIS status</strong><br>" +
         Object.entries(colors).map(
           ([status, color]) => `<i style="background:${color}"></i>${status}`
-        ).join("<br>");
+        ).join("<br>") +
+        `<br><i style="background:#1565c0"></i>support officer`;
       return div;
     };
     legend.addTo(map);
