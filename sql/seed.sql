@@ -73,3 +73,18 @@ INSERT INTO support_officers (name, district_id, latitude, longitude, geom) VALU
     ('Mwai Nyirenda',
      (SELECT id FROM districts WHERE name = 'Mzimba'),
      -11.4580, 34.0150, ST_SetSRID(ST_MakePoint(34.0150, -11.4580), 4326));
+
+UPDATE districts d
+SET geom = sub.hull
+FROM (
+    SELECT
+        f.district_id,
+        ST_Multi(ST_Buffer(ST_ConvexHull(ST_Collect(f.geom)), 0.25)) AS hull
+    FROM health_facilities f
+    GROUP BY f.district_id
+) sub
+WHERE d.id = sub.district_id;
+
+INSERT INTO deployment_events (facility_id, status, description) VALUES
+    ((SELECT id FROM health_facilities WHERE code = 'LLW-KCH'), 'live', 'MaHIS go-live complete'),
+    ((SELECT id FROM health_facilities WHERE code = 'KAR-DH'), 'not_started', 'No power or internet; offline deployment needed');
