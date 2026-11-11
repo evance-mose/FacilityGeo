@@ -4,7 +4,11 @@ from typing import Literal, Optional
 
 from pydantic import BaseModel, Field, field_validator
 
+# Status a user can set. 'not_in_tracker' is only ever set by the tracker load
+# (a facility with no tracker row), never by hand.
 Status = Literal["not_started", "in_progress", "live"]
+# Values accepted by filters and analysis endpoints.
+FilterStatus = Literal["not_in_tracker", "not_started", "in_progress", "live"]
 
 # Malawi bounding box (lon first, as in ST_MakePoint(lon, lat)).
 LON_MIN, LON_MAX = 32.5, 36.0

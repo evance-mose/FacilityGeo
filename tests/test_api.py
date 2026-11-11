@@ -40,10 +40,13 @@ def test_health(client):
 
 
 def test_facilities_filters(client):
-    r = client.get("/facilities", params={"status": "live", "district": "Zomba"})
+    r = client.get("/facilities", params={"status": "live"})
+    assert r.status_code == 200
+    assert all(f["properties"]["deployment_status"] == "live" for f in r.json()["features"])
+    r = client.get("/facilities", params={"status": "not_in_tracker", "district": "Zomba"})
     assert r.status_code == 200
     feats = r.json()["features"]
-    assert feats and all(f["properties"]["deployment_status"] == "live" for f in feats)
+    assert feats and all(f["properties"]["deployment_status"] == "not_in_tracker" for f in feats)
     assert all(f["properties"]["district"] == "Zomba" for f in feats)
 
 
@@ -84,10 +87,14 @@ def test_create_update_and_duplicate(client):
 
 def test_stats_add_up(client):
     s = client.get("/stats/summary").json()
-    assert s["live"] + s["in_progress"] + s["not_started"] == s["facilities"]
+    assert s["live"] + s["in_progress"] + s["not_started"] + s["not_in_tracker"] == s["facilities"]
+    assert s["tracked"] == s["facilities"] - s["not_in_tracker"]
+    assert s["pct_live"] is None or 0 <= float(s["pct_live"]) <= 100
     d = client.get("/stats/districts", params={"sort": "pct_live_asc"}).json()
     assert sum(x["total"] for x in d) == s["facilities"]
-    assert d == sorted(d, key=lambda x: (float(x["pct_live"]), x["district"]))
+    # % live is of tracked facilities; districts with none tracked (NULL) come last
+    assert d == sorted(d, key=lambda x: (x["pct_live"] is None, float(x["pct_live"] or 0), x["district"]))
+    assert all(x["tracked"] == x["total"] - x["not_in_tracker"] for x in d)
     assert client.get("/stats/districts", params={"sort": "name;DROP TABLE facilities"}).status_code == 422
 
 
@@ -122,7 +129,8 @@ def test_clusters_report_officer_and_hull(client):
 
 def test_extra_analysis_endpoints(client):
     nc = client.get("/analysis/no-connectivity").json()
-    assert nc["count"] == len(nc["features"]) > 0
+    # The real tracker has no internet / power columns, so this can legitimately be empty.
+    assert nc["count"] == len(nc["features"])
     far = client.get("/analysis/far-from-officer", params={"km": 100}).json()
     assert all(f["properties"]["distance_km"] > 100 for f in far["features"])
     rep = client.get("/reports/missing-coordinates").json()

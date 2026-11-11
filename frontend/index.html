@@ -63,11 +63,12 @@
   <header>
     <h1>FacilityGeo</h1>
     <span class="sub">Where is the rollout across Malawi's health facilities, and who can support the gaps?</span>
-    <span class="sim" title="Facility locations are real DHIS2 org units. Rollout status, dates, equipment and the four officers are simulated.">Simulated rollout data</span>
+    <span class="sim" title="Facility locations are DHIS2 org units and rollout status is from the rollout tracker. The four support officers are fictional.">Support officers simulated</span>
   </header>
 
   <aside>
     <div class="kpis" id="kpis"></div>
+    <div class="small" id="kpiNote"></div>
     <div id="msg">Loading...</div>
 
     <fieldset>
@@ -76,6 +77,7 @@
         <label>Status
           <select id="fStatus">
             <option value="">All</option>
+            <option value="not_in_tracker">Not in tracker</option>
             <option value="not_started">Not started</option>
             <option value="in_progress">In progress</option>
             <option value="live">Live</option>
@@ -97,7 +99,7 @@
 
     <fieldset>
       <legend>Layers</legend>
-      <label><input type="checkbox" data-layer="districts" checked> Districts coloured by % live</label>
+      <label><input type="checkbox" data-layer="districts" checked> Districts coloured by % live (of tracked)</label>
       <label><input type="checkbox" data-layer="facilities" checked> Facilities by status</label>
       <label><input type="checkbox" data-layer="officers" checked> Support officers (simulated)</label>
       <label><input type="checkbox" data-layer="clusters" checked> Clusters</label>
@@ -115,6 +117,7 @@
             <option value="not_started" selected>Not started</option>
             <option value="in_progress">In progress</option>
             <option value="live">Live</option>
+            <option value="not_in_tracker">Not in tracker</option>
           </select>
         </label>
         <button id="findClusters" type="button">Find clusters</button>
@@ -131,13 +134,14 @@
     </fieldset>
 
     <fieldset>
-      <legend>Districts ranked by % live (click a bar to filter)</legend>
+      <legend>Districts ranked by % live of tracked facilities (click a bar to filter)</legend>
       <div id="chartWrap"><div id="chartBox" style="position:relative"><canvas id="chart"></canvas></div></div>
     </fieldset>
 
     <footer>
-      Facility points: DHIS2 org units. District polygons: HDX. Rollout status, dates, equipment and support officers are
-      simulated for this demonstration; no patient data is held. This app has no sign-in and is for local use only.
+      Facility points: DHIS2 org units. District polygons: HDX. Rollout and training status: the rollout tracker; facilities
+      it does not list are shown as "Not in tracker" (status unknown, not "not started"). Support officers are fictional.
+      No patient data is held. This app has no sign-in and is for local use only.
     </footer>
   </aside>
 
@@ -149,8 +153,11 @@
 <script>
 "use strict";
 
-const COLORS = { live: "#2e9e44", in_progress: "#f39c12", not_started: "#d62728" };
-const LABELS = { live: "Live", in_progress: "In progress", not_started: "Not started" };
+const COLORS = { live: "#2e9e44", in_progress: "#f39c12", not_started: "#d62728", not_in_tracker: "#9aa3af" };
+const LABELS = { live: "Live", in_progress: "In progress", not_started: "Not started", not_in_tracker: "Not in tracker" };
+const SETTABLE = ["not_started", "in_progress", "live"];   // statuses a user can set
+const TRAINING = { done: "Done", in_progress: "In progress", not_started: "Not started" };
+const NO_DATA = "#d0d5dd";
 const PCT_CLASSES = [[80, "#1a9850"], [60, "#a6d96a"], [40, "#fee08b"], [20, "#fc8d59"], [0, "#d73027"]];
 
 const $ = (id) => document.getElementById(id);
@@ -184,6 +191,7 @@ L.tileLayer("https://tile.openstreetmap.org/{z}/{x}/{y}.png", {
 }).addTo(map);
 map.createPane("pDistricts").style.zIndex = 300;
 map.createPane("pClusters").style.zIndex = 420;
+map.createPane("pUntracked").style.zIndex = 440;   // facilities with no tracker row, under the tracked ones
 map.createPane("pFacilities").style.zIndex = 450;
 map.createPane("pHighlight").style.zIndex = 460;
 map.createPane("pTools").style.zIndex = 470;
@@ -204,8 +212,9 @@ legend.onAdd = () => {
   div.innerHTML =
     "<b>Facility status</b><br>" +
     Object.keys(COLORS).map((k) => `<span class="dot" style="background:${COLORS[k]}"></span>${LABELS[k]}<br>`).join("") +
-    "<b>District % live</b><br>" +
+    "<b>District % live (of tracked)</b><br>" +
     PCT_CLASSES.slice().reverse().map(([min, c], i, a) => `<i style="background:${c}"></i>${min}${i < a.length - 1 ? "–" + a[i + 1][0] : "+"}%<br>`).join("") +
+    `<i style="background:${NO_DATA}"></i>no tracker rows<br>` +
     '<span class="small">★ support officer (simulated)</span>';
   return div;
 };
@@ -215,22 +224,35 @@ legend.addTo(map);
 let chart = null;
 async function loadSummary() {
   const s = await api("/stats/summary");
-  $("kpis").innerHTML = [
-    ["Facilities", s.facilities], ["Live", s.pct_live + "%"], ["In progress", s.in_progress],
-    ["Not started", s.not_started], ["No internet", s.no_internet], ["No power", s.no_power],
-  ].map(([label, value]) => `<div class="kpi"><b>${esc(value)}</b><span>${esc(label)}</span></div>`).join("");
+  const cards = [
+    ["Facilities", s.facilities], ["In tracker", s.tracked], ["Live", `${s.live} (${s.pct_live ?? "–"}%)`],
+    ["Not started", s.not_started], ["In progress", s.in_progress], ["Not in tracker", s.not_in_tracker],
+    ["Training done", s.training_done], ["Training in progress", s.training_in_progress], ["Training not started", s.training_not_started],
+  ];
+  if (s.internet_recorded) cards.push(["No internet", s.no_internet]);
+  if (s.power_recorded) cards.push(["No power", s.no_power]);
+  $("kpis").innerHTML = cards.map(([label, value]) => `<div class="kpi"><b>${esc(value)}</b><span>${esc(label)}</span></div>`).join("");
+  $("kpiNote").textContent = `Live % is the share of the ${s.tracked} facilities in the tracker. ` +
+    `The other ${s.not_in_tracker} are not listed, so their status is unknown.`;
+  // The tracker has no internet or power columns: only offer those highlights when data exists.
+  for (const [value, recorded, label] of [["no_internet", s.internet_recorded, "No internet recorded"], ["no_power", s.power_recorded, "No power recorded"]]) {
+    const opt = $("fHighlight").querySelector(`[value="${value}"]`);
+    opt.disabled = !recorded;
+    opt.textContent = recorded ? label : label + " (no data in the tracker)";
+  }
 }
 
 async function loadChart() {
   const rows = await api("/stats/districts?sort=pct_live_desc");
+  const KEYS = ["live", "in_progress", "not_started", "not_in_tracker"];
   const pct = (r, key) => (100 * r[key]) / r.total;
   $("chartBox").style.height = rows.length * 20 + 70 + "px";
   if (chart) chart.destroy();
   chart = new Chart($("chart"), {
     type: "bar",
     data: {
-      labels: rows.map((r) => `${r.district} (${r.pct_live}%)`),
-      datasets: ["live", "in_progress", "not_started"].map((k) => ({
+      labels: rows.map((r) => `${r.district} (${r.tracked ? r.pct_live + "% of " + r.tracked : "none"} tracked)`),
+      datasets: KEYS.map((k) => ({
         label: LABELS[k], backgroundColor: COLORS[k], data: rows.map((r) => pct(r, k)),
       })),
     },
@@ -243,7 +265,7 @@ async function loadChart() {
       plugins: {
         legend: { position: "bottom" },
         tooltip: { callbacks: { label: (c) => {
-          const r = rows[c.dataIndex], k = ["live", "in_progress", "not_started"][c.datasetIndex];
+          const r = rows[c.dataIndex], k = KEYS[c.datasetIndex];
           return `${c.dataset.label}: ${r[k]} of ${r.total} (${c.parsed.x.toFixed(1)}%)`;
         } } },
       },
@@ -266,10 +288,12 @@ async function loadDistricts() {
   layers.districts.clearLayers();
   L.geoJSON(fc, {
     pane: "pDistricts",
-    style: (f) => ({ color: "#5b6573", weight: 1, fillColor: pctColor(f.properties.pct_live), fillOpacity: 0.55 }),
+    style: (f) => ({ color: "#5b6573", weight: 1, fillColor: f.properties.tracked ? pctColor(f.properties.pct_live) : NO_DATA, fillOpacity: 0.55 }),
     onEachFeature: (f, layer) => {
       const p = f.properties;
-      layer.bindTooltip(`${esc(p.name)}: ${p.pct_live ?? 0}% live (${p.live} of ${p.total} facilities)`, { sticky: true });
+      layer.bindTooltip(p.tracked
+        ? `${esc(p.name)}: ${p.live} of ${p.tracked} tracked facilities live (${p.pct_live}%); ${p.total} facilities in total`
+        : `${esc(p.name)}: none of its ${p.total} facilities are in the tracker`, { sticky: true });
     },
   }).addTo(layers.districts);
 }
@@ -280,11 +304,14 @@ function statusBadge(s) {
 }
 
 function popupHtml(p) {
-  const options = Object.keys(LABELS).map((k) => `<option value="${k}" ${k === p.deployment_status ? "selected" : ""}>${LABELS[k]}</option>`).join("");
+  const untracked = p.deployment_status === "not_in_tracker";
+  const options = (untracked ? '<option value="" selected disabled>Not in tracker</option>' : "") +
+    SETTABLE.map((k) => `<option value="${k}" ${k === p.deployment_status ? "selected" : ""}>${LABELS[k]}</option>`).join("");
   return `<div class="popup" data-id="${p.id}">
     <h3>${esc(p.name)}</h3>
     <div>${esc(p.district)}${p.facility_type ? " · " + esc(p.facility_type) : ""} · ${statusBadge(p.deployment_status)}</div>
     <table>
+      <tr><td>Training</td><td>${esc(TRAINING[p.training_status] || "not recorded")}</td></tr>
       <tr><td>Go-live</td><td>${esc(p.go_live_date || "not recorded")}</td></tr>
       <tr><td>Devices</td><td>${esc(p.devices_installed ?? "not recorded")}</td></tr>
       <tr><td>Staff trained</td><td>${esc(p.staff_trained ?? "not recorded")}</td></tr>
@@ -304,9 +331,11 @@ function popupHtml(p) {
 
 function styleMarker(m, highlighted = false) {
   const p = m.feature.properties;
+  const untracked = p.deployment_status === "not_in_tracker";
   m.setStyle({
-    radius: highlighted ? 8 : 5, weight: highlighted ? 3 : 1,
-    color: highlighted ? "#111" : "#fff", fillColor: COLORS[p.deployment_status] || "#667085", fillOpacity: 0.92,
+    radius: highlighted ? 8 : untracked ? 3.5 : 6, weight: highlighted ? 3 : untracked ? 0.5 : 1.5,
+    color: highlighted ? "#111" : "#fff", fillColor: COLORS[p.deployment_status] || "#667085",
+    fillOpacity: untracked && !highlighted ? 0.55 : 0.95,
   });
   if (highlighted) m.bringToFront();
 }
@@ -320,7 +349,7 @@ async function loadFacilities(fit = false) {
   markers.clear();
   for (const f of fc.features) {
     const [lon, lat] = f.geometry.coordinates;  // GeoJSON is lon, lat; Leaflet wants lat, lon
-    const m = L.circleMarker([lat, lon], { pane: "pFacilities" });
+    const m = L.circleMarker([lat, lon], { pane: f.properties.deployment_status === "not_in_tracker" ? "pUntracked" : "pFacilities" });
     m.feature = f;
     styleMarker(m);
     m.bindPopup(() => popupHtml(m.feature.properties), { minWidth: 250 });
@@ -354,6 +383,7 @@ function wirePopup(popup) {
   };
   box.querySelector('[data-act="save"]').onclick = async () => {
     const status = box.querySelector('[data-role="status"]').value;
+    if (!status) { out.textContent = "Choose a status first."; return; }
     try {
       const r = await api(`/facilities/${id}/status`, {
         method: "PATCH", headers: { "Content-Type": "application/json" },
@@ -419,9 +449,9 @@ $("findClusters").addEventListener("click", async () => {
       list.appendChild(item);
     });
     $("clusterInfo").textContent =
-      `${r.clustered} of ${r.facilities_with_status} ${LABELS[r.status].toLowerCase()} facilities fall in ${r.clusters.length} clusters (${r.noise} isolated). ` +
+      `${r.clustered} of ${r.facilities_with_status} ${LABELS[r.status].toLowerCase()} facilities fall in ${r.clusters.length} ${r.clusters.length === 1 ? "cluster" : "clusters"} (${r.noise} isolated). ` +
       "Click a cluster below to zoom and outline its facilities.";
-    notify(`${r.clusters.length} clusters found (distance ${r.eps_km} km, at least ${r.min_points} facilities)`);
+    notify(`${r.clusters.length} ${r.clusters.length === 1 ? "cluster" : "clusters"} found (distance ${r.eps_km} km, at least ${r.min_points} facilities)`);
   } catch (err) { notify(err.message, true); }
   btn.disabled = false;
 });

@@ -4,7 +4,8 @@
 --
 -- The tracker is the source of truth: rollout columns are reset first, so
 -- re-running replaces anything changed since (including status set through
--- the API PATCH endpoint). Facilities with no tracker row stay 'not_started'.
+-- the API PATCH endpoint). Facilities with no tracker row become
+-- 'not_in_tracker' (status unknown), which is not the same as 'not_started'.
 -- Values that cannot be parsed become NULL and are counted in the report.
 
 \set ON_ERROR_STOP on
@@ -14,6 +15,13 @@ CREATE OR REPLACE FUNCTION pg_temp.to_status(s TEXT) RETURNS TEXT LANGUAGE sql I
         WHEN lower(btrim(s)) ~ '(not\s*started|not\s*live|pending|planned|not yet)|^no$' THEN 'not_started'
         WHEN lower(btrim(s)) ~ '(progress|ongoing|install|partial)'            THEN 'in_progress'
         WHEN lower(btrim(s)) ~ '(live|complete|done|deployed)'                 THEN 'live'
+    END
+$$;
+CREATE OR REPLACE FUNCTION pg_temp.to_training(s TEXT) RETURNS TEXT LANGUAGE sql IMMUTABLE AS $$
+    SELECT CASE
+        WHEN lower(btrim(s)) ~ '(not\s*started|not\s*done|pending|not yet)|^no$' THEN 'not_started'
+        WHEN lower(btrim(s)) ~ '(progress|ongoing|partial)'                      THEN 'in_progress'
+        WHEN lower(btrim(s)) ~ '(done|complete|trained)|^yes$'                   THEN 'done'
     END
 $$;
 CREATE OR REPLACE FUNCTION pg_temp.to_date(s TEXT) RETURNS DATE LANGUAGE sql IMMUTABLE AS $$
@@ -34,12 +42,14 @@ $$;
 
 -- Reset rollout columns (support_officer_id is assigned separately, task 4).
 UPDATE facilities
-SET deployment_status = 'not_started', go_live_date = NULL, devices_installed = NULL,
-    staff_trained = NULL, has_internet = NULL, has_power = NULL, match_method = NULL;
+SET deployment_status = 'not_in_tracker', training_status = NULL, go_live_date = NULL,
+    devices_installed = NULL, staff_trained = NULL, has_internet = NULL, has_power = NULL,
+    match_method = NULL;
 
 -- One tracker row per facility: the latest row wins.
 UPDATE facilities f
 SET deployment_status = coalesce(pg_temp.to_status(t.status), 'not_started'),
+    training_status   = pg_temp.to_training(t.training),
     go_live_date      = pg_temp.to_date(t.go_live_date),
     devices_installed = pg_temp.to_int(t.devices),
     staff_trained     = pg_temp.to_int(t.staff_trained),
@@ -64,6 +74,7 @@ SELECT coalesce(match_method, 'no tracker row') AS method, count(*) FROM facilit
 \echo '== Tracker values that could not be parsed (left NULL / defaulted) =='
 SELECT
   count(*) FILTER (WHERE pg_temp.to_status(status) IS NULL)                         AS bad_status,
+  count(*) FILTER (WHERE training IS NOT NULL AND pg_temp.to_training(training) IS NULL) AS bad_training,
   count(*) FILTER (WHERE go_live_date IS NOT NULL AND pg_temp.to_date(go_live_date) IS NULL) AS bad_date,
   count(*) FILTER (WHERE devices IS NOT NULL AND pg_temp.to_int(devices) IS NULL)   AS bad_devices,
   count(*) FILTER (WHERE internet IS NOT NULL AND pg_temp.to_bool(internet) IS NULL) AS bad_internet,

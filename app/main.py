@@ -22,7 +22,7 @@ from fastapi.staticfiles import StaticFiles
 
 from . import db
 from .config import ROOT
-from .schemas import FacilityCreate, LAT_MAX, LAT_MIN, LON_MAX, LON_MIN, Status, StatusUpdate
+from .schemas import FacilityCreate, FilterStatus, LAT_MAX, LAT_MIN, LON_MAX, LON_MIN, Status, StatusUpdate
 
 log = logging.getLogger("facilitygeo")
 FRONTEND = ROOT / "frontend"
@@ -55,7 +55,7 @@ async def database_error(_: Request, exc: psycopg2.Error):
 
 # --------------------------------------------------------------------- helpers
 FACILITY_COLS = """
-    f.id, f.facility_code, f.name, f.district, f.facility_type, f.deployment_status,
+    f.id, f.facility_code, f.name, f.district, f.facility_type, f.deployment_status, f.training_status,
     f.go_live_date, f.devices_installed, f.staff_trained, f.has_internet, f.has_power,
     f.match_method, f.support_officer_id, o.name AS support_officer,
     ST_AsGeoJSON(f.geom, 6)::json AS geometry
@@ -115,7 +115,7 @@ def index():
 # ------------------------------------------------------------------ facilities
 @app.get("/facilities", tags=["facilities"])
 def list_facilities(
-    status: Optional[Status] = None,
+    status: Optional[FilterStatus] = None,
     district: Optional[str] = Query(default=None, max_length=60),
     limit: int = Query(default=2000, ge=1, le=5000),
 ):
@@ -203,14 +203,24 @@ def update_status(facility_id: int, body: StatusUpdate):
 # ------------------------------------------------------------------ statistics
 @app.get("/stats/summary", tags=["statistics"])
 def summary():
+    """Headline numbers. pct_live is the share of TRACKED facilities that are live
+    (facilities with no tracker row are counted as not_in_tracker, not as not started)."""
     with db.cursor() as cur:
         cur.execute(
             """SELECT count(*) AS facilities,
                       count(DISTINCT district) AS districts,
+                      count(*) FILTER (WHERE deployment_status <> 'not_in_tracker') AS tracked,
                       count(*) FILTER (WHERE deployment_status = 'live') AS live,
                       count(*) FILTER (WHERE deployment_status = 'in_progress') AS in_progress,
                       count(*) FILTER (WHERE deployment_status = 'not_started') AS not_started,
-                      round(100.0 * count(*) FILTER (WHERE deployment_status = 'live') / count(*), 1) AS pct_live,
+                      count(*) FILTER (WHERE deployment_status = 'not_in_tracker') AS not_in_tracker,
+                      round(100.0 * count(*) FILTER (WHERE deployment_status = 'live')
+                            / nullif(count(*) FILTER (WHERE deployment_status <> 'not_in_tracker'), 0), 1) AS pct_live,
+                      count(*) FILTER (WHERE training_status = 'done') AS training_done,
+                      count(*) FILTER (WHERE training_status = 'in_progress') AS training_in_progress,
+                      count(*) FILTER (WHERE training_status = 'not_started') AS training_not_started,
+                      count(has_internet) AS internet_recorded,
+                      count(has_power) AS power_recorded,
                       count(*) FILTER (WHERE has_internet IS FALSE) AS no_internet,
                       count(*) FILTER (WHERE has_power IS FALSE) AS no_power,
                       (SELECT count(*) FROM support_officers) AS officers
@@ -221,22 +231,27 @@ def summary():
 
 @app.get("/stats/districts", tags=["statistics"])
 def district_stats(sort: str = Query(default="name", pattern="^(name|pct_live_desc|pct_live_asc)$")):
-    """Per-district counts and % live. sort=pct_live_asc lists the districts furthest behind first."""
+    """Per-district counts and % live of the tracked facilities (NULL when none are tracked).
+    sort=pct_live_asc lists the districts furthest behind first; untracked districts go last."""
     order = {
         "name": "district",
-        "pct_live_desc": "pct_live DESC, district",
-        "pct_live_asc": "pct_live ASC, district",
+        "pct_live_desc": "pct_live DESC NULLS LAST, district",
+        "pct_live_asc": "pct_live ASC NULLS LAST, district",
     }[sort]  # whitelisted: never interpolates user text
     with db.cursor() as cur:
         cur.execute(
             f"""SELECT district,
                        count(*) AS total,
+                       count(*) FILTER (WHERE deployment_status <> 'not_in_tracker') AS tracked,
                        count(*) FILTER (WHERE deployment_status = 'live') AS live,
                        count(*) FILTER (WHERE deployment_status = 'in_progress') AS in_progress,
                        count(*) FILTER (WHERE deployment_status = 'not_started') AS not_started,
-                       round(100.0 * count(*) FILTER (WHERE deployment_status = 'live') / count(*), 1) AS pct_live,
+                       count(*) FILTER (WHERE deployment_status = 'not_in_tracker') AS not_in_tracker,
+                       round(100.0 * count(*) FILTER (WHERE deployment_status = 'live')
+                             / nullif(count(*) FILTER (WHERE deployment_status <> 'not_in_tracker'), 0), 1) AS pct_live,
                        rank() OVER (ORDER BY count(*) FILTER (WHERE deployment_status = 'live')::numeric
-                                             / count(*) DESC) AS rank_by_pct_live
+                                             / nullif(count(*) FILTER (WHERE deployment_status <> 'not_in_tracker'), 0)
+                                             DESC NULLS LAST) AS rank_by_pct_live
                 FROM facilities GROUP BY district ORDER BY {order}"""
         )
         return cur.fetchall()
@@ -244,15 +259,16 @@ def district_stats(sort: str = Query(default="name", pattern="^(name|pct_live_de
 
 @app.get("/districts", tags=["statistics"])
 def districts_geojson():
-    """HDX district polygons (simplified for drawing) with % live. Mzimba North and
-    South are combined because the HDX file has a single Mzimba polygon."""
+    """HDX district polygons (simplified for drawing) with % live of the tracked facilities.
+    Mzimba North and South are combined because the HDX file has a single Mzimba polygon."""
     with db.cursor() as cur:
         cur.execute(
             f"""SELECT d.id, d.name, d.region,
                        count(f.id) AS total,
+                       count(f.id) FILTER (WHERE f.deployment_status <> 'not_in_tracker') AS tracked,
                        count(f.id) FILTER (WHERE f.deployment_status = 'live') AS live,
                        round(100.0 * count(f.id) FILTER (WHERE f.deployment_status = 'live')
-                             / nullif(count(f.id), 0), 1) AS pct_live,
+                             / nullif(count(f.id) FILTER (WHERE f.deployment_status <> 'not_in_tracker'), 0), 1) AS pct_live,
                        ST_AsGeoJSON(ST_SimplifyPreserveTopology(d.geom, 0.003), 5)::json AS geometry
                 FROM districts_hdx d
                 LEFT JOIN facilities f ON {DISTRICT_POLYGON} = d.name
@@ -305,7 +321,7 @@ def within_radius(
     lat: float = Query(ge=LAT_MIN, le=LAT_MAX),
     lon: float = Query(ge=LON_MIN, le=LON_MAX),
     radius_km: float = Query(default=20, gt=0, le=500),
-    status: Optional[Status] = None,
+    status: Optional[FilterStatus] = None,
     limit: int = Query(default=2000, ge=1, le=5000),
 ):
     """Facilities within radius_km of a point (ST_DWithin on geography, so metres)."""
@@ -333,7 +349,7 @@ def clusters(
     eps_km: float = Query(default=15, ge=1, le=200, description="DBSCAN distance in km (converted to metres); "
                                                               "large values chain dense areas into one cluster"),
     min_points: int = Query(default=5, ge=2, le=100),
-    status: Status = "not_started",
+    status: FilterStatus = "not_started",
 ):
     """Clusters of facilities with the given status (default: not started), found with
     ST_ClusterDBSCAN in EPSG:32736 so eps is in metres. Each cluster gets its nearest officer."""
@@ -382,7 +398,7 @@ def clusters(
 
 
 @app.get("/analysis/no-connectivity", tags=["analysis"])
-def no_connectivity(status: Optional[Status] = None):
+def no_connectivity(status: Optional[FilterStatus] = None):
     """Facilities recorded as having no internet and/or no power. NULL means 'not recorded'
     and is counted separately, never treated as 'no'."""
     with db.cursor() as cur:

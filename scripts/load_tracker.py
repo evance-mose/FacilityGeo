@@ -26,6 +26,7 @@ ALIASES = {
     "district": {"district", "districtname"},
     "facility_code": {"dhis2code", "code", "facilitycode", "uid", "dhis2uid", "orgunitid", "orgunituid"},
     "status": {"status", "deploymentstatus", "rolloutstatus", "implementationstatus", "golivestatus"},
+    "training": {"endusertraining", "training", "trainingstatus", "usertraining"},
     "go_live_date": {"golivedate", "golive", "livedate", "dategolive", "datelive"},
     "devices": {"devicesinstalled", "devices", "computers", "devicesdeployed"},
     "staff_trained": {"stafftrained", "trained", "numbertrained", "trainedstaff"},

@@ -146,6 +146,6 @@ SELECT t.row_id, t.facility_name, t.district,
         ORDER BY similarity(pg_temp.norm(t.facility_name), pg_temp.norm(f.name)) DESC LIMIT 1) AS closest_facility_anywhere
 FROM tracker_raw t WHERE t.facility_id IS NULL ORDER BY t.district, t.facility_name;
 
-\echo '== Facilities with no tracker row (stay not_started) =='
+\echo '== Facilities with no tracker row (become not_in_tracker) =='
 SELECT count(*) AS facilities_without_tracker_row
 FROM facilities f WHERE NOT EXISTS (SELECT 1 FROM tracker_raw t WHERE t.facility_id = f.facility_code);

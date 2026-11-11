@@ -52,6 +52,7 @@ CREATE TABLE IF NOT EXISTS tracker_raw (
     match_method    TEXT
 );
 -- Older databases created tracker_raw with only the two matching columns.
+ALTER TABLE tracker_raw ADD COLUMN IF NOT EXISTS training      TEXT;
 ALTER TABLE tracker_raw ADD COLUMN IF NOT EXISTS facility_name TEXT;
 ALTER TABLE tracker_raw ADD COLUMN IF NOT EXISTS district      TEXT;
 ALTER TABLE tracker_raw ADD COLUMN IF NOT EXISTS facility_code TEXT;
@@ -69,8 +70,11 @@ CREATE TABLE IF NOT EXISTS facilities (
     name               TEXT NOT NULL,
     district           TEXT NOT NULL,       -- DHIS2 district, not a spatial join
     facility_type      TEXT,
-    deployment_status  TEXT NOT NULL DEFAULT 'not_started'
-        CHECK (deployment_status IN ('not_started', 'in_progress', 'live')),
+    -- not_in_tracker = the facility has no row in the rollout tracker (status unknown),
+    -- which is different from a tracked facility that has not started.
+    deployment_status  TEXT NOT NULL DEFAULT 'not_in_tracker'
+        CHECK (deployment_status IN ('not_in_tracker', 'not_started', 'in_progress', 'live')),
+    training_status    TEXT CHECK (training_status IN ('not_started', 'in_progress', 'done')),  -- end-user training; NULL = not recorded
     go_live_date       DATE,
     devices_installed  INTEGER CHECK (devices_installed >= 0),
     staff_trained      INTEGER CHECK (staff_trained >= 0),
@@ -83,6 +87,21 @@ CREATE TABLE IF NOT EXISTS facilities (
 CREATE INDEX IF NOT EXISTS facilities_gix ON facilities USING GIST (geom);
 -- Lets ST_DWithin(geom::geography, ...) (radius searches, metres) use an index.
 CREATE INDEX IF NOT EXISTS facilities_geog_gix ON facilities USING GIST ((geom::geography));
+-- Older databases: add training_status and allow the 'not_in_tracker' status.
+ALTER TABLE facilities ADD COLUMN IF NOT EXISTS training_status TEXT
+    CHECK (training_status IN ('not_started', 'in_progress', 'done'));
+DO $$
+BEGIN
+    IF NOT EXISTS (SELECT 1 FROM pg_constraint
+                   WHERE conrelid = 'facilities'::regclass AND contype = 'c'
+                     AND conname = 'facilities_deployment_status_check'
+                     AND pg_get_constraintdef(oid) LIKE '%not_in_tracker%') THEN
+        ALTER TABLE facilities DROP CONSTRAINT IF EXISTS facilities_deployment_status_check;
+        ALTER TABLE facilities ADD CONSTRAINT facilities_deployment_status_check
+            CHECK (deployment_status IN ('not_in_tracker', 'not_started', 'in_progress', 'live'));
+    END IF;
+END $$;
+ALTER TABLE facilities ALTER COLUMN deployment_status SET DEFAULT 'not_in_tracker';
 CREATE INDEX IF NOT EXISTS facilities_district_idx ON facilities (district);
 CREATE INDEX IF NOT EXISTS facilities_status_idx ON facilities (deployment_status);
 CREATE INDEX IF NOT EXISTS facilities_officer_idx ON facilities (support_officer_id);
