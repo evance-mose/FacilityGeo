@@ -1,0 +1,501 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>FacilityGeo: rollout monitoring, Malawi</title>
+<link rel="stylesheet" href="/static/vendor/leaflet/leaflet.css">
+<style>
+  :root { --live:#2e9e44; --prog:#f39c12; --none:#d62728; --ink:#1f2933; --muted:#667085; --line:#e4e7ec; --bg:#f6f7f9; }
+  * { box-sizing: border-box; }
+  html, body { height: 100%; margin: 0; font: 14px/1.4 -apple-system, "Segoe UI", Roboto, Helvetica, Arial, sans-serif; color: var(--ink); }
+  #app { display: grid; grid-template-columns: 390px 1fr; grid-template-rows: auto 1fr; height: 100%; }
+  header { grid-column: 1 / 3; display: flex; align-items: center; gap: 14px; padding: 8px 16px; background: #14213d; color: #fff; }
+  header h1 { margin: 0; font-size: 18px; }
+  header .sub { opacity: .8; font-size: 13px; }
+  header .sim { margin-left: auto; background: #fca311; color: #14213d; padding: 3px 9px; border-radius: 12px; font-size: 12px; font-weight: 600; }
+  aside { overflow-y: auto; background: var(--bg); border-right: 1px solid var(--line); padding: 12px; }
+  #map { height: 100%; min-height: 400px; }
+  .kpis { display: grid; grid-template-columns: repeat(3, 1fr); gap: 8px; margin-bottom: 12px; }
+  .kpi { background: #fff; border: 1px solid var(--line); border-radius: 8px; padding: 8px 10px; }
+  .kpi b { display: block; font-size: 20px; }
+  .kpi span { color: var(--muted); font-size: 12px; }
+  fieldset { border: 1px solid var(--line); border-radius: 8px; background: #fff; margin: 0 0 12px; padding: 8px 10px 10px; }
+  legend { font-weight: 600; font-size: 13px; padding: 0 4px; }
+  label { display: block; margin: 5px 0; }
+  .row { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; }
+  select, input[type=number], button { font: inherit; padding: 4px 8px; border: 1px solid #cdd2da; border-radius: 6px; background: #fff; }
+  button { cursor: pointer; background: #14213d; color: #fff; border-color: #14213d; }
+  button.secondary { background: #fff; color: var(--ink); border-color: #cdd2da; }
+  button:disabled { opacity: .5; cursor: default; }
+  input[type=range] { width: 120px; }
+  .dot { display: inline-block; width: 10px; height: 10px; border-radius: 50%; margin-right: 4px; }
+  #msg { min-height: 20px; font-size: 13px; padding: 6px 8px; border-radius: 6px; background: #eef2ff; margin-bottom: 12px; }
+  #msg.err { background: #fee4e2; color: #b42318; }
+  #clusterList { max-height: 190px; overflow-y: auto; margin-top: 8px; font-size: 13px; }
+  #clusterList div { padding: 4px 6px; border-bottom: 1px solid var(--line); cursor: pointer; }
+  #clusterList div:hover { background: #fff4e5; }
+  #chartWrap { max-height: 360px; overflow-y: auto; background: #fff; border: 1px solid var(--line); border-radius: 8px; padding: 6px; }
+  .small { color: var(--muted); font-size: 12px; }
+  .badge { color: #fff; padding: 1px 7px; border-radius: 10px; font-size: 12px; }
+  .popup h3 { margin: 0 0 4px; font-size: 15px; }
+  .popup table { border-collapse: collapse; margin: 4px 0; }
+  .popup td { padding: 1px 8px 1px 0; vertical-align: top; }
+  .popup td:first-child { color: var(--muted); }
+  .popup .btns { display: flex; gap: 6px; margin-top: 6px; flex-wrap: wrap; align-items: center; }
+  .popup .pmsg { margin-top: 5px; font-size: 12px; }
+  .legend { background: rgba(255,255,255,.92); padding: 8px 10px; border-radius: 8px; box-shadow: 0 1px 4px rgba(0,0,0,.3); font-size: 12px; line-height: 1.6; }
+  .legend i { display: inline-block; width: 14px; height: 12px; margin-right: 6px; opacity: .85; vertical-align: -1px; }
+  .officer-icon { background: #003399; color: #fff; border: 2px solid #fff; border-radius: 50%; width: 26px; height: 26px; line-height: 22px; text-align: center; font-size: 15px; box-shadow: 0 1px 4px rgba(0,0,0,.5); }
+  footer { font-size: 11px; color: var(--muted); padding: 4px 0 12px; }
+  /* Narrow windows: map on top, controls below, page scrolls. */
+  @media (max-width: 900px) {
+    #app { grid-template-columns: 1fr; grid-template-rows: auto 62vh auto; height: auto; min-height: 100%; }
+    header { flex-wrap: wrap; }
+    header .sim { margin-left: 0; }
+    #map { grid-row: 2; height: 62vh; }
+    aside { grid-row: 3; overflow-y: visible; border-right: 0; border-top: 1px solid var(--line); }
+  }
+</style>
+</head>
+<body>
+<div id="app">
+  <header>
+    <h1>FacilityGeo</h1>
+    <span class="sub">Where is the rollout across Malawi's health facilities, and who can support the gaps?</span>
+    <span class="sim" title="Facility locations are real DHIS2 org units. Rollout status, dates, equipment and the four officers are simulated.">Simulated rollout data</span>
+  </header>
+
+  <aside>
+    <div class="kpis" id="kpis"></div>
+    <div id="msg">Loading...</div>
+
+    <fieldset>
+      <legend>Filter facilities</legend>
+      <div class="row">
+        <label>Status
+          <select id="fStatus">
+            <option value="">All</option>
+            <option value="not_started">Not started</option>
+            <option value="in_progress">In progress</option>
+            <option value="live">Live</option>
+          </select>
+        </label>
+        <label>District <select id="fDistrict"><option value="">All</option></select></label>
+        <button class="secondary" id="fReset" type="button">Reset</button>
+      </div>
+      <label>Highlight
+        <select id="fHighlight">
+          <option value="">Nothing</option>
+          <option value="no_internet">No internet recorded</option>
+          <option value="no_power">No power recorded</option>
+          <option value="far">Far from every officer (&gt; 100 km)</option>
+        </select>
+      </label>
+      <div class="small" id="highlightInfo"></div>
+    </fieldset>
+
+    <fieldset>
+      <legend>Layers</legend>
+      <label><input type="checkbox" data-layer="districts" checked> Districts coloured by % live</label>
+      <label><input type="checkbox" data-layer="facilities" checked> Facilities by status</label>
+      <label><input type="checkbox" data-layer="officers" checked> Support officers (simulated)</label>
+      <label><input type="checkbox" data-layer="clusters" checked> Clusters</label>
+    </fieldset>
+
+    <fieldset>
+      <legend>Clusters of facilities with the chosen status</legend>
+      <div class="row">
+        <label>Distance <input type="range" id="eps" min="5" max="60" step="1" value="15"> <b id="epsVal">15</b> km</label>
+      </div>
+      <div class="row">
+        <label>Min facilities <input type="number" id="minPts" min="2" max="50" value="5" style="width:64px"></label>
+        <label>Status
+          <select id="cStatus">
+            <option value="not_started" selected>Not started</option>
+            <option value="in_progress">In progress</option>
+            <option value="live">Live</option>
+          </select>
+        </label>
+        <button id="findClusters" type="button">Find clusters</button>
+      </div>
+      <div class="small" id="clusterInfo">Groups nearby facilities (DBSCAN, distance in metres in EPSG:32736) and names the nearest officer to each group.</div>
+      <div id="clusterList"></div>
+    </fieldset>
+
+    <fieldset>
+      <legend>Facilities within a radius</legend>
+      <label><input type="checkbox" id="radiusOn"> Click the map to count facilities within
+        <input type="number" id="radiusKm" min="1" max="500" value="20" style="width:64px"> km</label>
+      <div class="small" id="radiusInfo"></div>
+    </fieldset>
+
+    <fieldset>
+      <legend>Districts ranked by % live (click a bar to filter)</legend>
+      <div id="chartWrap"><div id="chartBox" style="position:relative"><canvas id="chart"></canvas></div></div>
+    </fieldset>
+
+    <footer>
+      Facility points: DHIS2 org units. District polygons: HDX. Rollout status, dates, equipment and support officers are
+      simulated for this demonstration; no patient data is held. This app has no sign-in and is for local use only.
+    </footer>
+  </aside>
+
+  <div id="map"></div>
+</div>
+
+<script src="/static/vendor/leaflet/leaflet.js"></script>
+<script src="/static/vendor/chart.umd.min.js"></script>
+<script>
+"use strict";
+
+const COLORS = { live: "#2e9e44", in_progress: "#f39c12", not_started: "#d62728" };
+const LABELS = { live: "Live", in_progress: "In progress", not_started: "Not started" };
+const PCT_CLASSES = [[80, "#1a9850"], [60, "#a6d96a"], [40, "#fee08b"], [20, "#fc8d59"], [0, "#d73027"]];
+
+const $ = (id) => document.getElementById(id);
+const esc = (v) => String(v ?? "").replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]));
+const yesNo = (v) => (v === true ? "Yes" : v === false ? "No" : "not recorded");
+const pctColor = (p) => (PCT_CLASSES.find(([min]) => (p ?? 0) >= min) || PCT_CLASSES[4])[1];
+
+function notify(text, isError = false) {
+  const el = $("msg");
+  el.textContent = text;
+  el.className = isError ? "err" : "";
+}
+
+async function api(path, options) {
+  const res = await fetch(path, options);
+  if (!res.ok) {
+    let detail = res.statusText;
+    try { const body = await res.json(); detail = typeof body.detail === "string" ? body.detail : JSON.stringify(body.detail); } catch (_) {}
+    throw new Error(detail);
+  }
+  return res.json();
+}
+
+/* ------------------------------------------------------------------ map */
+const MALAWI_BOUNDS = [[-17.2, 32.6], [-9.3, 35.95]];
+const map = L.map("map", { zoomSnap: 0.25 }).fitBounds(MALAWI_BOUNDS);
+// Keep Leaflet's cached size correct when the layout changes (window resize, stacked layout).
+new ResizeObserver(() => map.invalidateSize()).observe(document.getElementById("map"));
+L.tileLayer("https://tile.openstreetmap.org/{z}/{x}/{y}.png", {
+  maxZoom: 18, attribution: "&copy; OpenStreetMap contributors",
+}).addTo(map);
+map.createPane("pDistricts").style.zIndex = 300;
+map.createPane("pClusters").style.zIndex = 420;
+map.createPane("pFacilities").style.zIndex = 450;
+map.createPane("pHighlight").style.zIndex = 460;
+map.createPane("pTools").style.zIndex = 470;
+
+const layers = {
+  districts: L.layerGroup().addTo(map),
+  facilities: L.layerGroup().addTo(map),
+  officers: L.layerGroup().addTo(map),
+  clusters: L.layerGroup().addTo(map),
+  highlight: L.layerGroup().addTo(map),
+  tools: L.layerGroup().addTo(map),   // nearest-officer line, radius circle
+};
+const markers = new Map(); // facility id -> circleMarker
+
+const legend = L.control({ position: "topright" });
+legend.onAdd = () => {
+  const div = L.DomUtil.create("div", "legend");
+  div.innerHTML =
+    "<b>Facility status</b><br>" +
+    Object.keys(COLORS).map((k) => `<span class="dot" style="background:${COLORS[k]}"></span>${LABELS[k]}<br>`).join("") +
+    "<b>District % live</b><br>" +
+    PCT_CLASSES.slice().reverse().map(([min, c], i, a) => `<i style="background:${c}"></i>${min}${i < a.length - 1 ? "–" + a[i + 1][0] : "+"}%<br>`).join("") +
+    '<span class="small">★ support officer (simulated)</span>';
+  return div;
+};
+legend.addTo(map);
+
+/* ------------------------------------------------------------ summary + chart */
+let chart = null;
+async function loadSummary() {
+  const s = await api("/stats/summary");
+  $("kpis").innerHTML = [
+    ["Facilities", s.facilities], ["Live", s.pct_live + "%"], ["In progress", s.in_progress],
+    ["Not started", s.not_started], ["No internet", s.no_internet], ["No power", s.no_power],
+  ].map(([label, value]) => `<div class="kpi"><b>${esc(value)}</b><span>${esc(label)}</span></div>`).join("");
+}
+
+async function loadChart() {
+  const rows = await api("/stats/districts?sort=pct_live_desc");
+  const pct = (r, key) => (100 * r[key]) / r.total;
+  $("chartBox").style.height = rows.length * 20 + 70 + "px";
+  if (chart) chart.destroy();
+  chart = new Chart($("chart"), {
+    type: "bar",
+    data: {
+      labels: rows.map((r) => `${r.district} (${r.pct_live}%)`),
+      datasets: ["live", "in_progress", "not_started"].map((k) => ({
+        label: LABELS[k], backgroundColor: COLORS[k], data: rows.map((r) => pct(r, k)),
+      })),
+    },
+    options: {
+      indexAxis: "y", responsive: true, maintainAspectRatio: false,
+      scales: {
+        x: { stacked: true, max: 100, title: { display: true, text: "% of the district's facilities" } },
+        y: { stacked: true, ticks: { font: { size: 11 } } },
+      },
+      plugins: {
+        legend: { position: "bottom" },
+        tooltip: { callbacks: { label: (c) => {
+          const r = rows[c.dataIndex], k = ["live", "in_progress", "not_started"][c.datasetIndex];
+          return `${c.dataset.label}: ${r[k]} of ${r.total} (${c.parsed.x.toFixed(1)}%)`;
+        } } },
+      },
+      onClick: (_, els) => {
+        if (!els.length) return;
+        $("fDistrict").value = rows[els[0].index].district;
+        applyFilters(true);
+      },
+    },
+  });
+  const sel = $("fDistrict");
+  if (sel.options.length === 1) {
+    rows.map((r) => r.district).sort().forEach((d) => sel.add(new Option(d, d)));
+  }
+}
+
+/* ---------------------------------------------------------------- districts */
+async function loadDistricts() {
+  const fc = await api("/districts");
+  layers.districts.clearLayers();
+  L.geoJSON(fc, {
+    pane: "pDistricts",
+    style: (f) => ({ color: "#5b6573", weight: 1, fillColor: pctColor(f.properties.pct_live), fillOpacity: 0.55 }),
+    onEachFeature: (f, layer) => {
+      const p = f.properties;
+      layer.bindTooltip(`${esc(p.name)}: ${p.pct_live ?? 0}% live (${p.live} of ${p.total} facilities)`, { sticky: true });
+    },
+  }).addTo(layers.districts);
+}
+
+/* --------------------------------------------------------------- facilities */
+function statusBadge(s) {
+  return `<span class="badge" style="background:${COLORS[s] || "#667085"}">${esc(LABELS[s] || s)}</span>`;
+}
+
+function popupHtml(p) {
+  const options = Object.keys(LABELS).map((k) => `<option value="${k}" ${k === p.deployment_status ? "selected" : ""}>${LABELS[k]}</option>`).join("");
+  return `<div class="popup" data-id="${p.id}">
+    <h3>${esc(p.name)}</h3>
+    <div>${esc(p.district)}${p.facility_type ? " · " + esc(p.facility_type) : ""} · ${statusBadge(p.deployment_status)}</div>
+    <table>
+      <tr><td>Go-live</td><td>${esc(p.go_live_date || "not recorded")}</td></tr>
+      <tr><td>Devices</td><td>${esc(p.devices_installed ?? "not recorded")}</td></tr>
+      <tr><td>Staff trained</td><td>${esc(p.staff_trained ?? "not recorded")}</td></tr>
+      <tr><td>Internet</td><td>${yesNo(p.has_internet)}</td></tr>
+      <tr><td>Power</td><td>${yesNo(p.has_power)}</td></tr>
+      <tr><td>Assigned officer</td><td>${esc(p.support_officer || "none")}</td></tr>
+      <tr><td>Code</td><td>${esc(p.facility_code)}</td></tr>
+    </table>
+    <div class="btns"><button type="button" data-act="officer">Show nearest officer</button></div>
+    <div class="btns">
+      <select data-role="status">${options}</select>
+      <button type="button" class="secondary" data-act="save">Update status</button>
+    </div>
+    <div class="pmsg"></div>
+  </div>`;
+}
+
+function styleMarker(m, highlighted = false) {
+  const p = m.feature.properties;
+  m.setStyle({
+    radius: highlighted ? 8 : 5, weight: highlighted ? 3 : 1,
+    color: highlighted ? "#111" : "#fff", fillColor: COLORS[p.deployment_status] || "#667085", fillOpacity: 0.92,
+  });
+  if (highlighted) m.bringToFront();
+}
+
+async function loadFacilities(fit = false) {
+  const q = new URLSearchParams();
+  if ($("fStatus").value) q.set("status", $("fStatus").value);
+  if ($("fDistrict").value) q.set("district", $("fDistrict").value);
+  const fc = await api("/facilities?" + q);
+  layers.facilities.clearLayers();
+  markers.clear();
+  for (const f of fc.features) {
+    const [lon, lat] = f.geometry.coordinates;  // GeoJSON is lon, lat; Leaflet wants lat, lon
+    const m = L.circleMarker([lat, lon], { pane: "pFacilities" });
+    m.feature = f;
+    styleMarker(m);
+    m.bindPopup(() => popupHtml(m.feature.properties), { minWidth: 250 });
+    m.addTo(layers.facilities);
+    markers.set(f.properties.id, m);
+  }
+  if (fit && fc.features.length) {
+    map.fitBounds(L.featureGroup([...markers.values()]).getBounds().pad(0.15));
+  }
+  notify(`${fc.count} facilities shown${$("fStatus").value ? " · " + LABELS[$("fStatus").value] : ""}${$("fDistrict").value ? " · " + $("fDistrict").value : ""}`);
+}
+
+// Popups are built on demand, so their buttons are wired when a popup opens and
+// again whenever its content is replaced (after a status update).
+function wirePopup(popup) {
+  const root = popup.getElement();
+  const box = root && root.querySelector(".popup[data-id]");
+  if (!box) return;
+  const id = Number(box.dataset.id);
+  const out = box.querySelector(".pmsg");
+  box.querySelector('[data-act="officer"]').onclick = async () => {
+    try {
+      const r = await api(`/analysis/nearest-officer?facility_id=${id}`);
+      layers.tools.clearLayers();
+      const pts = r.line.coordinates.map(([lon, lat]) => [lat, lon]);
+      L.polyline(pts, { pane: "pTools", color: "#003399", weight: 3, dashArray: "6 6" }).addTo(layers.tools);
+      map.fitBounds(L.latLngBounds(pts).pad(0.4));
+      out.textContent = `Nearest officer: ${r.officer.name} (${r.officer.base_location}), ${r.distance_km} km away` +
+        (r.matches_assigned_officer ? " (the assigned officer)" : " (differs from the assigned officer)");
+    } catch (err) { out.textContent = "Error: " + err.message; }
+  };
+  box.querySelector('[data-act="save"]').onclick = async () => {
+    const status = box.querySelector('[data-role="status"]').value;
+    try {
+      const r = await api(`/facilities/${id}/status`, {
+        method: "PATCH", headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ deployment_status: status }),
+      });
+      const m = markers.get(id);
+      if (m) {
+        m.feature.properties.deployment_status = r.deployment_status;
+        m.feature.properties.go_live_date = r.go_live_date;
+        styleMarker(m);
+        m.setPopupContent(popupHtml(m.feature.properties));  // replaces the DOM: re-wire it
+        wirePopup(m.getPopup());
+        m.getPopup().getElement().querySelector(".pmsg").textContent = "Saved: " + LABELS[r.deployment_status];
+      }
+      await Promise.all([loadSummary(), loadChart(), loadDistricts()]);
+    } catch (err) { out.textContent = "Error: " + err.message; }
+  };
+}
+map.on("popupopen", (e) => wirePopup(e.popup));
+
+/* ----------------------------------------------------------------- officers */
+async function loadOfficers() {
+  const fc = await api("/officers");
+  layers.officers.clearLayers();
+  for (const f of fc.features) {
+    const [lon, lat] = f.geometry.coordinates, p = f.properties;
+    L.marker([lat, lon], { icon: L.divIcon({ className: "", html: '<div class="officer-icon">★</div>', iconSize: [26, 26], iconAnchor: [13, 13] }) })
+      .bindPopup(`<div class="popup"><h3>${esc(p.name)}</h3><div>${esc(p.base_location)}</div>
+        <div>${esc(p.facilities)} facilities assigned (nearest officer)</div>
+        <div class="small">${p.is_simulated ? "Simulated officer, for demonstration" : ""}</div></div>`)
+      .addTo(layers.officers);
+  }
+}
+
+/* ----------------------------------------------------------------- clusters */
+$("eps").addEventListener("input", () => ($("epsVal").textContent = $("eps").value));
+
+function highlightIds(ids) {
+  const set = new Set(ids);
+  markers.forEach((m, id) => styleMarker(m, set.has(id)));
+}
+
+$("findClusters").addEventListener("click", async () => {
+  const btn = $("findClusters");
+  btn.disabled = true;
+  try {
+    const q = new URLSearchParams({ eps_km: $("eps").value, min_points: $("minPts").value, status: $("cStatus").value });
+    const r = await api("/analysis/clusters?" + q);
+    layers.clusters.clearLayers();
+    const list = $("clusterList");
+    list.innerHTML = "";
+    r.clusters.forEach((c, i) => {
+      const o = c.nearest_officer;
+      const layer = L.geoJSON(c.hull, {
+        pane: "pClusters", style: { color: "#8b0000", weight: 2, dashArray: "6 4", fillColor: "#d62728", fillOpacity: 0.25 },
+      }).bindPopup(`<div class="popup"><h3>Cluster ${i + 1}: ${c.size} ${esc(LABELS[r.status].toLowerCase())} facilities</h3>
+        <div>${esc(c.districts.join(", "))}</div>
+        <div>Nearest officer: <b>${esc(o.name)}</b> (${esc(o.base_location)}), ${esc(o.distance_km)} km from the cluster centre</div></div>`)
+        .addTo(layers.clusters);
+      const item = document.createElement("div");
+      item.textContent = `#${i + 1} · ${c.size} facilities · ${c.districts.slice(0, 3).join(", ")}${c.districts.length > 3 ? "…" : ""} · ${o.name} (${o.distance_km} km)`;
+      item.onclick = () => { map.fitBounds(layer.getBounds().pad(0.3)); layer.openPopup(); highlightIds(c.facility_ids); };
+      list.appendChild(item);
+    });
+    $("clusterInfo").textContent =
+      `${r.clustered} of ${r.facilities_with_status} ${LABELS[r.status].toLowerCase()} facilities fall in ${r.clusters.length} clusters (${r.noise} isolated). ` +
+      "Click a cluster below to zoom and outline its facilities.";
+    notify(`${r.clusters.length} clusters found (distance ${r.eps_km} km, at least ${r.min_points} facilities)`);
+  } catch (err) { notify(err.message, true); }
+  btn.disabled = false;
+});
+
+/* ----------------------------------------------------------------- highlight */
+async function applyHighlight() {
+  layers.highlight.clearLayers();
+  const kind = $("fHighlight").value;
+  $("highlightInfo").textContent = "";
+  if (!kind) return;
+  try {
+    let fc, text;
+    if (kind === "far") {
+      fc = await api("/analysis/far-from-officer?km=100");
+      text = `${fc.count} facilities are more than 100 km from every officer.`;
+    } else {
+      fc = await api("/analysis/no-connectivity");
+      const key = kind === "no_internet" ? "has_internet" : "has_power";
+      fc.features = fc.features.filter((f) => f.properties[key] === false);
+      text = `${fc.features.length} facilities recorded with ${kind === "no_internet" ? "no internet" : "no power"} (unknown values are not counted).`;
+    }
+    for (const f of fc.features) {
+      const [lon, lat] = f.geometry.coordinates;
+      L.circleMarker([lat, lon], { pane: "pHighlight", radius: 10, color: "#111", weight: 2, fill: false, interactive: false }).addTo(layers.highlight);
+    }
+    $("highlightInfo").textContent = text;
+  } catch (err) { notify(err.message, true); }
+}
+$("fHighlight").addEventListener("change", applyHighlight);
+
+/* -------------------------------------------------------------------- radius */
+map.on("click", async (e) => {
+  if (!$("radiusOn").checked) return;
+  const km = Number($("radiusKm").value);
+  if (!(km > 0 && km <= 500)) { $("radiusInfo").textContent = "Enter a radius between 1 and 500 km."; return; }
+  try {
+    const q = new URLSearchParams({ lat: e.latlng.lat.toFixed(5), lon: e.latlng.lng.toFixed(5), radius_km: km });
+    if ($("fStatus").value) q.set("status", $("fStatus").value);
+    const r = await api("/analysis/within-radius?" + q);
+    layers.tools.clearLayers();
+    L.circle(e.latlng, { pane: "pTools", radius: km * 1000, color: "#003399", weight: 2, fillOpacity: 0.06, interactive: false }).addTo(layers.tools);
+    const parts = Object.entries(r.by_status).map(([k, v]) => `${LABELS[k]}: ${v}`).join(", ");
+    $("radiusInfo").textContent = `${r.count} facilities within ${km} km${parts ? " (" + parts + ")" : ""}.`;
+  } catch (err) {
+    $("radiusInfo").textContent = err.message.includes("less_than") || err.message.includes("greater_than")
+      ? "That point is outside Malawi." : err.message;
+  }
+});
+
+/* ------------------------------------------------------------- filters/layers */
+function applyFilters(fit) { return loadFacilities(fit).catch((e) => notify(e.message, true)); }
+$("fStatus").addEventListener("change", () => applyFilters(false));
+$("fDistrict").addEventListener("change", () => applyFilters(true));
+$("fReset").addEventListener("click", () => {
+  $("fStatus").value = ""; $("fDistrict").value = "";
+  layers.tools.clearLayers();
+  applyFilters(false).then(() => map.fitBounds(MALAWI_BOUNDS));
+});
+document.querySelectorAll("[data-layer]").forEach((cb) =>
+  cb.addEventListener("change", () => (cb.checked ? map.addLayer(layers[cb.dataset.layer]) : map.removeLayer(layers[cb.dataset.layer])))
+);
+
+/* --------------------------------------------------------------------- start */
+(async function init() {
+  try {
+    await Promise.all([loadSummary(), loadChart(), loadDistricts(), loadOfficers()]);
+    await loadFacilities(false);
+    map.invalidateSize();            // layout is final now; refit to the real map size
+    map.fitBounds(MALAWI_BOUNDS);
+    $("findClusters").click();
+  } catch (err) {
+    notify("Could not load data: " + err.message + ". Is the API running and the database reachable?", true);
+  }
+})();
+</script>
+</body>
+</html>
