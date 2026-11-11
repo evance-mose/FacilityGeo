@@ -3,5 +3,7 @@ __pycache__/
 .pytest_cache/
 .env
 .DS_Store
-# Real MoH / DHIS2 exports stay out of Git; only a small sample is committed.
+# Real MoH / DHIS2 exports stay out of Git.
 data/
+# Screenshots and the video script are kept locally, not on GitHub.
+docs/

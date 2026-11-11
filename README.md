@@ -2,8 +2,6 @@
 
 A database-driven web app that shows where a health-information-system rollout stands across health facilities in Malawi, where the gaps are, and which not-started facilities sit close together.
 
-![Overview](docs/app-overview.png)
-
 > **Data note.** Facility locations are real (DHIS2 organisation units), district polygons are real (HDX), and rollout and training status come from the real rollout tracker (59 facilities, of which 47 match a DHIS2 facility). The tracker lists only about 5% of the 908 facilities, so every other facility is shown as **Not in tracker** (status unknown, not "not started"). **No simulated or seed data is used.** There are no support officers in the database, so the officer features (nearest officer, far from every officer) are hidden until real officers are loaded (see section 4). The tracker has no equipment, internet or power columns, so those are not shown. No patient or personal data is held. The real tracker file is not in Git.
 
 ## 1. The problem
@@ -127,8 +125,6 @@ pytest -q                              # 16 tests against the live database
 
 ## 6. QGIS and the MCP connection
 
-![Rollout status](docs/map-rollout-status.png) ![Clusters](docs/map-clusters.png)
-
 Open `qgis/facilitygeo.qgz` in QGIS 3.44. Layers read the local database through a QGIS connection that you create yourself (**Layer > Data Source Manager > PostgreSQL**); the project stores no password. Styles are in `qgis/styles/`.
 
 To let an AI assistant drive QGIS:
@@ -173,5 +169,4 @@ scripts/    loaders, xlsx converter, QGIS cross-check
 frontend/   index.html + vendored Leaflet and Chart.js
 qgis/       project file and QML styles
 tests/      API tests
-docs/       screenshots and the video script
 ```
