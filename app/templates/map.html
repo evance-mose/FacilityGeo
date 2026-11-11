@@ -1,223 +1,422 @@
-<!DOCTYPE html>
+<!doctype html>
 <html lang="en">
-<head>
-  <meta charset="utf-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1">
-  <title>FacilityGeo</title>
-  <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css">
-  <style>
-    :root { --green: #1b5e20; --ink: #123; --muted: #5b6b73; }
-    * { box-sizing: border-box; }
-    html, body { margin: 0; height: 100%; font-family: "Segoe UI", sans-serif; color: var(--ink); }
-    #app { display: grid; grid-template-columns: 340px 1fr; height: 100%; }
-    aside { background: #f7faf7; border-right: 1px solid #d7e3d7; overflow: auto; padding: 16px; }
-    h1 { font-size: 20px; margin: 0 0 4px; color: var(--green); }
-    .sub { color: var(--muted); font-size: 13px; margin-bottom: 14px; }
-    .stats { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; margin-bottom: 14px; }
-    .card { background: #fff; border: 1px solid #d7e3d7; border-radius: 8px; padding: 8px 10px; }
-    .card b { display: block; font-size: 20px; color: var(--green); }
-    .card span { font-size: 12px; color: var(--muted); }
-    label, select, button { font: inherit; }
-    .layers label { display: flex; gap: 8px; align-items: center; font-size: 13px; margin: 4px 0; }
-    select, button { width: 100%; margin-top: 6px; padding: 7px 8px; border-radius: 6px; border: 1px solid #c5d4c5; }
-    button { background: var(--green); color: #fff; border: 0; cursor: pointer; }
-    table { width: 100%; border-collapse: collapse; font-size: 12px; margin-top: 8px; }
-    th, td { text-align: left; padding: 5px 4px; border-bottom: 1px solid #e3eee3; }
-    #map { height: 100%; }
-    .legend, .leaflet-control { font: 12px/1.4 sans-serif; }
-    .legend { background: #fff; padding: 8px 10px; }
-    .legend i { display: inline-block; width: 10px; height: 10px; margin-right: 6px; border-radius: 50%; }
-  </style>
-</head>
-<body>
-  <div id="app">
-    <aside>
-      <h1>FacilityGeo</h1>
-      <div class="sub">MaHIS spatial deployment monitoring, Malawi</div>
-      <div class="stats" id="stats"></div>
-      <div class="layers">
-        <strong>Layers</strong>
-        <label><input type="checkbox" id="chkDistricts" checked> District progress (ST_Contains)</label>
-        <label><input type="checkbox" id="chkOfficers" checked> Support officers</label>
-        <label><input type="checkbox" id="chkReach"> 20 km reach (ST_DWithin)</label>
-        <label><input type="checkbox" id="chkAssign" checked> Nearest officer (KNN)</label>
-        <label><input type="checkbox" id="chkClusters"> Undeployed clusters (DBSCAN)</label>
-        <label><input type="checkbox" id="chkRemote"> Remote only (no internet/power)</label>
-      </div>
-      <p>
-        <strong>Visit order</strong>
-        <select id="officerSelect"></select>
-        <button id="routeBtn">Plan support visit (pgRouting)</button>
-      </p>
-      <div id="routeBox" class="sub"></div>
-      <strong>Live facilities per district</strong>
-      <table>
-        <thead><tr><th>District</th><th>Live</th><th>Total</th></tr></thead>
-        <tbody id="districtRows"></tbody>
-      </table>
-    </aside>
-    <div id="map"></div>
-  </div>
-  <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
-  <script>
-    const colors = { live: "#2e7d32", in_progress: "#ef6c00", not_started: "#c62828", blocked: "#546e7a" };
-    const clusterColors = ["#6a1b9a", "#00838f", "#ad1457", "#f9a825", "#4527a0"];
-    const map = L.map("map").setView([-13.5, 34.3], 7);
-    L.tileLayer("https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png", { attribution: "&copy; OpenStreetMap" }).addTo(map);
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>FacilityGeo</title>
+    <link
+      rel="stylesheet"
+      href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css"
+    />
+    <style>
+      :root {
+        --green: #1b5e20;
+        --ink: #123;
+        --muted: #5b6b73;
+      }
+      * {
+        box-sizing: border-box;
+      }
+      html,
+      body {
+        margin: 0;
+        height: 100%;
+        font-family: "Segoe UI", sans-serif;
+        color: var(--ink);
+      }
+      #app {
+        display: grid;
+        grid-template-columns: 340px 1fr;
+        height: 100%;
+      }
+      aside {
+        background: #f7faf7;
+        border-right: 1px solid #d7e3d7;
+        overflow: auto;
+        padding: 16px;
+      }
+      h1 {
+        font-size: 20px;
+        margin: 0 0 4px;
+        color: var(--green);
+      }
+      .sub {
+        color: var(--muted);
+        font-size: 13px;
+        margin-bottom: 14px;
+      }
+      .stats {
+        display: grid;
+        grid-template-columns: 1fr 1fr;
+        gap: 8px;
+        margin-bottom: 14px;
+      }
+      .card {
+        background: #fff;
+        border: 1px solid #d7e3d7;
+        border-radius: 8px;
+        padding: 8px 10px;
+      }
+      .card b {
+        display: block;
+        font-size: 20px;
+        color: var(--green);
+      }
+      .card span {
+        font-size: 12px;
+        color: var(--muted);
+      }
+      label,
+      select,
+      button {
+        font: inherit;
+      }
+      .layers label {
+        display: flex;
+        gap: 8px;
+        align-items: center;
+        font-size: 13px;
+        margin: 4px 0;
+      }
+      select,
+      button {
+        width: 100%;
+        margin-top: 6px;
+        padding: 7px 8px;
+        border-radius: 6px;
+        border: 1px solid #c5d4c5;
+      }
+      button {
+        background: var(--green);
+        color: #fff;
+        border: 0;
+        cursor: pointer;
+      }
+      table {
+        width: 100%;
+        border-collapse: collapse;
+        font-size: 12px;
+        margin-top: 8px;
+      }
+      th,
+      td {
+        text-align: left;
+        padding: 5px 4px;
+        border-bottom: 1px solid #e3eee3;
+      }
+      #map {
+        height: 100%;
+      }
+      .legend,
+      .leaflet-control {
+        font: 12px/1.4 sans-serif;
+      }
+      .legend {
+        background: #fff;
+        padding: 8px 10px;
+      }
+      .legend i {
+        display: inline-block;
+        width: 10px;
+        height: 10px;
+        margin-right: 6px;
+        border-radius: 50%;
+      }
+    </style>
+  </head>
+  <body>
+    <div id="app">
+      <aside>
+        <h1>FacilityGeo</h1>
+        <div class="sub">MaHIS spatial deployment monitoring, Malawi</div>
+        <div class="stats" id="stats"></div>
+        <div class="layers">
+          <strong>Layers</strong>
+          <label
+            ><input type="checkbox" id="chkDistricts" checked /> District
+            progress (ST_Contains)</label
+          >
+          <label
+            ><input type="checkbox" id="chkOfficers" checked /> Support
+            officers</label
+          >
+          <label
+            ><input type="checkbox" id="chkReach" /> 20 km reach
+            (ST_DWithin)</label
+          >
+          <label
+            ><input type="checkbox" id="chkAssign" checked /> Nearest officer
+            (KNN)</label
+          >
+          <label
+            ><input type="checkbox" id="chkClusters" /> Undeployed clusters
+            (DBSCAN)</label
+          >
+          <label
+            ><input type="checkbox" id="chkRemote" /> Remote only (no
+            internet/power)</label
+          >
+        </div>
+        <p>
+          <strong>Visit order</strong>
+          <select id="officerSelect"></select>
+          <button id="routeBtn">Plan support visit (pgRouting)</button>
+        </p>
+        <div id="routeBox" class="sub"></div>
+        <strong>Live facilities per district</strong>
+        <table>
+          <thead>
+            <tr>
+              <th>District</th>
+              <th>Live</th>
+              <th>Total</th>
+            </tr>
+          </thead>
+          <tbody id="districtRows"></tbody>
+        </table>
+      </aside>
+      <div id="map"></div>
+    </div>
+    <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+    <script>
+      const colors = {
+        live: "#2e7d32",
+        in_progress: "#ef6c00",
+        not_started: "#c62828",
+        blocked: "#546e7a",
+      };
+      const clusterColors = [
+        "#6a1b9a",
+        "#00838f",
+        "#ad1457",
+        "#f9a825",
+        "#4527a0",
+      ];
+      const map = L.map("map").setView([-13.5, 34.3], 7);
+      L.tileLayer("https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png", {
+        attribution: "&copy; OpenStreetMap",
+      }).addTo(map);
 
-    const layers = {
-      districts: L.layerGroup().addTo(map),
-      facilities: L.layerGroup().addTo(map),
-      officers: L.layerGroup().addTo(map),
-      assign: L.layerGroup().addTo(map),
-      reach: L.layerGroup(),
-      clusters: L.layerGroup(),
-      route: L.layerGroup().addTo(map)
-    };
+      const layers = {
+        districts: L.layerGroup().addTo(map),
+        facilities: L.layerGroup().addTo(map),
+        officers: L.layerGroup().addTo(map),
+        assign: L.layerGroup().addTo(map),
+        reach: L.layerGroup(),
+        clusters: L.layerGroup(),
+        route: L.layerGroup().addTo(map),
+      };
 
-    const state = { facilities: null, officers: null, clusters: [], districts: null };
+      const state = {
+        facilities: null,
+        officers: null,
+        clusters: [],
+        districts: null,
+      };
 
-    function statusColor(status) { return colors[status] || "#333"; }
+      function statusColor(status) {
+        return colors[status] || "#333";
+      }
 
-    function renderFacilities() {
-      layers.facilities.clearLayers();
-      layers.assign.clearLayers();
-      const remoteOnly = document.getElementById("chkRemote").checked;
-      L.geoJSON(state.facilities, {
-        filter: (feature) => !remoteOnly || feature.properties.is_remote,
-        pointToLayer: (feature, latlng) => L.circleMarker(latlng, {
-          radius: 8, color: "#fff", weight: 1,
-          fillColor: statusColor(feature.properties.mahis_status), fillOpacity: 0.92
-        }),
-        onEachFeature: (feature, layer) => {
-          const p = feature.properties;
-          const [lng, lat] = feature.geometry.coordinates;
-          layer.bindPopup(
-            `<strong>${p.name}</strong><br>${p.facility_type}<br>${p.district} · ${p.mahis_status}` +
-            `<br>Internet: ${p.has_internet ? "yes" : "no"} · Power: ${p.has_power ? "yes" : "no"}` +
-            `<br>Trained staff: ${p.has_trained_staff ? "yes" : "no"}` +
-            `<br>Nearest officer: ${p.nearest_officer} (${p.nearest_officer_km} km)`
-          );
-          if (document.getElementById("chkAssign").checked && p.officer_lat != null) {
-            L.polyline([[p.officer_lat, p.officer_lng], [lat, lng]], {
-              color: "#1565c0", weight: 1, dashArray: "4 4", opacity: 0.55
-            }).addTo(layers.assign);
-          }
-        }
-      }).addTo(layers.facilities);
-    }
+      function renderFacilities() {
+        layers.facilities.clearLayers();
+        layers.assign.clearLayers();
+        const remoteOnly = document.getElementById("chkRemote").checked;
+        L.geoJSON(state.facilities, {
+          filter: (feature) => !remoteOnly || feature.properties.is_remote,
+          pointToLayer: (feature, latlng) =>
+            L.circleMarker(latlng, {
+              radius: 8,
+              color: "#fff",
+              weight: 1,
+              fillColor: statusColor(feature.properties.mahis_status),
+              fillOpacity: 0.92,
+            }),
+          onEachFeature: (feature, layer) => {
+            const p = feature.properties;
+            const [lng, lat] = feature.geometry.coordinates;
+            layer.bindPopup(
+              `<strong>${p.name}</strong><br>${p.facility_type}<br>${p.district} · ${p.mahis_status}` +
+                `<br>Internet: ${p.has_internet ? "yes" : "no"} · Power: ${p.has_power ? "yes" : "no"}` +
+                `<br>Trained staff: ${p.has_trained_staff ? "yes" : "no"}` +
+                `<br>Nearest officer: ${p.nearest_officer} (${p.nearest_officer_km} km)`,
+            );
+            if (
+              document.getElementById("chkAssign").checked &&
+              p.officer_lat != null
+            ) {
+              L.polyline(
+                [
+                  [p.officer_lat, p.officer_lng],
+                  [lat, lng],
+                ],
+                {
+                  color: "#1565c0",
+                  weight: 1,
+                  dashArray: "4 4",
+                  opacity: 0.55,
+                },
+              ).addTo(layers.assign);
+            }
+          },
+        }).addTo(layers.facilities);
+      }
 
-    function renderClusters() {
-      layers.clusters.clearLayers();
-      state.clusters.forEach((site) => {
-        if (site.cluster_id == null) return;
-        L.circleMarker([site.latitude, site.longitude], {
-          radius: 12, color: clusterColors[site.cluster_id % clusterColors.length],
-          weight: 3, fillOpacity: 0
-        }).bindPopup(`${site.name}<br>Undeployed cluster ${site.cluster_id}`).addTo(layers.clusters);
-      });
-    }
+      function renderClusters() {
+        layers.clusters.clearLayers();
+        state.clusters.forEach((site) => {
+          if (site.cluster_id == null) return;
+          L.circleMarker([site.latitude, site.longitude], {
+            radius: 12,
+            color: clusterColors[site.cluster_id % clusterColors.length],
+            weight: 3,
+            fillOpacity: 0,
+          })
+            .bindPopup(`${site.name}<br>Undeployed cluster ${site.cluster_id}`)
+            .addTo(layers.clusters);
+        });
+      }
 
-    Promise.all([
-      fetch("/api/summary").then((r) => r.json()),
-      fetch("/api/districts").then((r) => r.json()),
-      fetch("/api/facilities.geojson").then((r) => r.json()),
-      fetch("/api/officers.geojson").then((r) => r.json()),
-      fetch("/api/spatial/clusters").then((r) => r.json())
-    ]).then(([summary, districts, facilities, officers, clusters]) => {
-      state.facilities = facilities;
-      state.officers = officers;
-      state.clusters = clusters;
-      state.districts = districts;
+      Promise.all([
+        fetch("/api/summary").then((r) => r.json()),
+        fetch("/api/districts").then((r) => r.json()),
+        fetch("/api/facilities.geojson").then((r) => r.json()),
+        fetch("/api/officers.geojson").then((r) => r.json()),
+        fetch("/api/spatial/clusters").then((r) => r.json()),
+      ]).then(([summary, districts, facilities, officers, clusters]) => {
+        state.facilities = facilities;
+        state.officers = officers;
+        state.clusters = clusters;
+        state.districts = districts;
 
-      document.getElementById("stats").innerHTML = `
+        document.getElementById("stats").innerHTML = `
         <div class="card"><b>${summary.facilities}</b><span>facilities</span></div>
         <div class="card"><b>${summary.live}</b><span>live</span></div>
         <div class="card"><b>${summary.not_started + summary.blocked}</b><span>not live</span></div>
         <div class="card"><b>${summary.remote_or_no_utilities}</b><span>remote / no utilities</span></div>`;
 
-      document.getElementById("districtRows").innerHTML = districts.districts.map((d) =>
-        `<tr><td>${d.district}</td><td>${d.live}</td><td>${d.facilities}</td></tr>`
-      ).join("");
+        document.getElementById("districtRows").innerHTML = districts.districts
+          .map(
+            (d) =>
+              `<tr><td>${d.district}</td><td>${d.live}</td><td>${d.facilities}</td></tr>`,
+          )
+          .join("");
 
-      L.geoJSON(districts.geojson, {
-        style: (feature) => {
-          const live = feature.properties.live;
-          const total = feature.properties.facilities || 1;
-          const ratio = live / total;
-          return {
-            color: "#1b5e20", weight: 1,
-            fillColor: ratio >= 0.7 ? "#81c784" : ratio >= 0.3 ? "#ffe082" : "#ef9a9a",
-            fillOpacity: 0.25
-          };
-        },
-        onEachFeature: (feature, layer) => {
-          const p = feature.properties;
-          layer.bindPopup(`${p.district} (${p.region})<br>Live ${p.live} / ${p.facilities}`);
-        }
-      }).addTo(layers.districts);
+        L.geoJSON(districts.geojson, {
+          style: (feature) => {
+            const live = feature.properties.live;
+            const total = feature.properties.facilities || 1;
+            const ratio = live / total;
+            return {
+              color: "#1b5e20",
+              weight: 1,
+              fillColor:
+                ratio >= 0.7 ? "#81c784" : ratio >= 0.3 ? "#ffe082" : "#ef9a9a",
+              fillOpacity: 0.25,
+            };
+          },
+          onEachFeature: (feature, layer) => {
+            const p = feature.properties;
+            layer.bindPopup(
+              `${p.district} (${p.region})<br>Live ${p.live} / ${p.facilities}`,
+            );
+          },
+        }).addTo(layers.districts);
 
-      L.geoJSON(officers, {
-        pointToLayer: (feature, latlng) => {
-          L.circle(latlng, { radius: 20000, color: "#1565c0", weight: 1, fillOpacity: 0.05 }).addTo(layers.reach);
-          return L.circleMarker(latlng, { radius: 7, color: "#fff", fillColor: "#1565c0", fillOpacity: 1, weight: 1 });
-        },
-        onEachFeature: (feature, layer) => {
-          layer.bindPopup(`<strong>${feature.properties.name}</strong><br>Support officer`);
-        }
-      }).addTo(layers.officers);
+        L.geoJSON(officers, {
+          pointToLayer: (feature, latlng) => {
+            L.circle(latlng, {
+              radius: 20000,
+              color: "#1565c0",
+              weight: 1,
+              fillOpacity: 0.05,
+            }).addTo(layers.reach);
+            return L.circleMarker(latlng, {
+              radius: 7,
+              color: "#fff",
+              fillColor: "#1565c0",
+              fillOpacity: 1,
+              weight: 1,
+            });
+          },
+          onEachFeature: (feature, layer) => {
+            layer.bindPopup(
+              `<strong>${feature.properties.name}</strong><br>Support officer`,
+            );
+          },
+        }).addTo(layers.officers);
 
-      document.getElementById("officerSelect").innerHTML = officers.features.map((f) =>
-        `<option value="${f.properties.id}">${f.properties.name}</option>`
-      ).join("");
+        document.getElementById("officerSelect").innerHTML = officers.features
+          .map(
+            (f) =>
+              `<option value="${f.properties.id}">${f.properties.name}</option>`,
+          )
+          .join("");
 
-      renderFacilities();
-      renderClusters();
-    });
-
-    document.getElementById("chkDistricts").onchange = (e) => toggle(layers.districts, e.target.checked);
-    document.getElementById("chkOfficers").onchange = (e) => toggle(layers.officers, e.target.checked);
-    document.getElementById("chkReach").onchange = (e) => toggle(layers.reach, e.target.checked);
-    document.getElementById("chkAssign").onchange = (e) => {
-      toggle(layers.assign, e.target.checked);
-      renderFacilities();
-    };
-    document.getElementById("chkClusters").onchange = (e) => toggle(layers.clusters, e.target.checked);
-    document.getElementById("chkRemote").onchange = renderFacilities;
-
-    document.getElementById("routeBtn").onclick = () => {
-      const officerId = document.getElementById("officerSelect").value;
-      fetch(`/api/spatial/route?officer_id=${officerId}`).then((r) => r.json()).then((data) => {
-        layers.route.clearLayers();
-        if (!data.stops.length) {
-          document.getElementById("routeBox").textContent = "No undeployed sites assigned.";
-          return;
-        }
-        const latlngs = data.stops.map((s) => [s.latitude, s.longitude]);
-        L.polyline(latlngs, { color: "#6a1b9a", weight: 3 }).addTo(layers.route);
-        data.stops.forEach((stop) => {
-          L.circleMarker([stop.latitude, stop.longitude], {
-            radius: 5, color: "#6a1b9a", fillOpacity: 1
-          }).bindPopup(`${stop.seq}. ${stop.name}<br>${stop.leg_km} km`).addTo(layers.route);
-        });
-        document.getElementById("routeBox").textContent =
-          `${data.stops.length} stops · ${data.total_km} km · ${data.method}`;
+        renderFacilities();
+        renderClusters();
       });
-    };
 
-    function toggle(layer, on) {
-      if (on) layer.addTo(map); else map.removeLayer(layer);
-    }
+      document.getElementById("chkDistricts").onchange = (e) =>
+        toggle(layers.districts, e.target.checked);
+      document.getElementById("chkOfficers").onchange = (e) =>
+        toggle(layers.officers, e.target.checked);
+      document.getElementById("chkReach").onchange = (e) =>
+        toggle(layers.reach, e.target.checked);
+      document.getElementById("chkAssign").onchange = (e) => {
+        toggle(layers.assign, e.target.checked);
+        renderFacilities();
+      };
+      document.getElementById("chkClusters").onchange = (e) =>
+        toggle(layers.clusters, e.target.checked);
+      document.getElementById("chkRemote").onchange = renderFacilities;
 
-    const legend = L.control({ position: "bottomleft" });
-    legend.onAdd = function () {
-      const div = L.DomUtil.create("div", "legend");
-      div.innerHTML = "<strong>MaHIS status</strong><br>" +
-        Object.entries(colors).map(([k, v]) => `<i style="background:${v}"></i>${k}`).join("<br>") +
-        `<br><i style="background:#1565c0"></i>support officer`;
-      return div;
-    };
-    legend.addTo(map);
-  </script>
-</body>
+      document.getElementById("routeBtn").onclick = () => {
+        const officerId = document.getElementById("officerSelect").value;
+        fetch(`/api/spatial/route?officer_id=${officerId}`)
+          .then((r) => r.json())
+          .then((data) => {
+            layers.route.clearLayers();
+            if (!data.stops.length) {
+              document.getElementById("routeBox").textContent =
+                "No undeployed sites assigned.";
+              return;
+            }
+            const latlngs = data.stops.map((s) => [s.latitude, s.longitude]);
+            L.polyline(latlngs, { color: "#6a1b9a", weight: 3 }).addTo(
+              layers.route,
+            );
+            data.stops.forEach((stop) => {
+              L.circleMarker([stop.latitude, stop.longitude], {
+                radius: 5,
+                color: "#6a1b9a",
+                fillOpacity: 1,
+              })
+                .bindPopup(`${stop.seq}. ${stop.name}<br>${stop.leg_km} km`)
+                .addTo(layers.route);
+            });
+            document.getElementById("routeBox").textContent =
+              `${data.stops.length} stops · ${data.total_km} km · ${data.method}`;
+          });
+      };
+
+      function toggle(layer, on) {
+        if (on) layer.addTo(map);
+        else map.removeLayer(layer);
+      }
+
+      const legend = L.control({ position: "bottomleft" });
+      legend.onAdd = function () {
+        const div = L.DomUtil.create("div", "legend");
+        div.innerHTML =
+          "<strong>MaHIS status</strong><br>" +
+          Object.entries(colors)
+            .map(([k, v]) => `<i style="background:${v}"></i>${k}`)
+            .join("<br>") +
+          `<br><i style="background:#1565c0"></i>support officer`;
+        return div;
+      };
+      legend.addTo(map);
+    </script>
+  </body>
 </html>
