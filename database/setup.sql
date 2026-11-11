@@ -88,13 +88,18 @@ CREATE TABLE IF NOT EXISTS districts_hdx (
 );
 CREATE INDEX IF NOT EXISTS districts_hdx_gix ON districts_hdx USING GIST (geom);
 
+-- Support officers: the sample table is extended, not replaced. Officers are
+-- fictional (simulated) and based at district HQs; see database/assign_officers.sql.
+ALTER TABLE support_officers ADD COLUMN IF NOT EXISTS base_location TEXT;
+ALTER TABLE support_officers ADD COLUMN IF NOT EXISTS is_simulated BOOLEAN NOT NULL DEFAULT TRUE;
+
 -- Application role `geo`: data access only, no schema changes. Skipped if the
 -- role has not been created yet.
 DO $$
 BEGIN
     IF EXISTS (SELECT 1 FROM pg_roles WHERE rolname = 'geo') THEN
         GRANT SELECT, INSERT, UPDATE, DELETE ON
-            orgunits_raw, tracker_raw, facilities, districts_hdx TO geo;
+            orgunits_raw, tracker_raw, facilities, districts_hdx, support_officers TO geo;
         GRANT USAGE, SELECT ON ALL SEQUENCES IN SCHEMA public TO geo;
     END IF;
 END $$;
