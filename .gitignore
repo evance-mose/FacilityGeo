@@ -2,3 +2,5 @@
 __pycache__/
 .env
 .DS_Store
+# Real MoH / DHIS2 exports stay out of Git; only a small sample is committed.
+data/
