@@ -1,8 +1,8 @@
 """Load a rollout tracker CSV into the tracker_raw staging table.
 
 Usage (from the FacilityGeo folder):
-    .venv/bin/python scripts/load_tracker.py data/tracker_simulated.csv
-    .venv/bin/python scripts/load_tracker.py data/<real tracker>.csv
+    .venv/bin/python scripts/load_tracker.py data/tracker.csv
+(a spreadsheet can be converted first with scripts/xlsx_to_csv.py)
 
 Headers are mapped by name (case and punctuation ignored, see ALIASES), so
 the real file does not need renaming. Everything is stored as text; cleaning

@@ -63,15 +63,16 @@ FACILITY_COLS = """
 
 # Nearest officer to {pt}: <-> (KNN, degrees, index-assisted) picks 3 candidates,
 # then the true nearest is chosen by distance in metres (::geography).
+# LEFT JOIN ... ON TRUE: with no officers loaded the row is kept and officer_* are NULL.
 NEAREST_OFFICER = """
-    CROSS JOIN LATERAL (
+    LEFT JOIN LATERAL (
         SELECT c.id AS officer_id, c.name AS officer_name, c.base_location,
                ST_Distance(c.geom::geography, ({pt})::geography) AS distance_m,
                ST_AsGeoJSON(c.geom, 6)::json AS officer_geometry
         FROM (SELECT id, name, base_location, geom FROM support_officers
               ORDER BY geom <-> {pt} LIMIT 3) c
         ORDER BY distance_m LIMIT 1
-    ) n
+    ) n ON TRUE
 """
 
 DISTRICT_POLYGON = "CASE WHEN f.district LIKE 'Mzimba %%' THEN 'Mzimba' ELSE f.district END"
@@ -279,7 +280,7 @@ def districts_geojson():
 
 @app.get("/officers", tags=["statistics"])
 def officers():
-    """Support officers (simulated) with how many facilities each is assigned."""
+    """Support officers with how many facilities each is assigned (empty until real officers are loaded)."""
     with db.cursor() as cur:
         cur.execute(
             """SELECT s.id, s.name, s.base_location, s.is_simulated,
@@ -306,6 +307,8 @@ def nearest_officer(facility_id: int = Query(ge=1)):
         r = cur.fetchone()
     if r is None:
         raise HTTPException(404, f"facility {facility_id} not found")
+    if r["officer_id"] is None:
+        raise HTTPException(404, "No support officers are loaded yet (table support_officers is empty).")
     return {
         "facility": {"id": r["id"], "name": r["name"], "district": r["district"]},
         "officer": {"id": r["officer_id"], "name": r["officer_name"], "base_location": r["base_location"]},
@@ -388,9 +391,9 @@ def clusters(
                 "cluster_id": c["cluster_id"], "size": c["size"], "districts": c["districts"],
                 "facility_ids": c["facility_ids"], "hull": c["hull"],
                 "centre": {"lat": c["centre_lat"], "lon": c["centre_lon"]},
-                "nearest_officer": {"id": c["officer_id"], "name": c["officer_name"],
-                                    "base_location": c["base_location"],
-                                    "distance_km": c["officer_distance_km"]},
+                "nearest_officer": None if c["officer_id"] is None else {
+                    "id": c["officer_id"], "name": c["officer_name"],
+                    "base_location": c["base_location"], "distance_km": c["officer_distance_km"]},
             }
             for c in found
         ],
@@ -426,8 +429,13 @@ def no_connectivity(status: Optional[FilterStatus] = None):
 
 @app.get("/analysis/far-from-officer", tags=["analysis"])
 def far_from_officer(km: float = Query(default=100, gt=0, le=1000)):
-    """Facilities further than `km` kilometres from ANY support officer (true distance in metres)."""
+    """Facilities further than `km` kilometres from ANY support officer (true distance in metres).
+    Returns an empty result with a note while no officers are loaded."""
     with db.cursor() as cur:
+        cur.execute("SELECT count(*) AS n FROM support_officers")
+        if cur.fetchone()["n"] == 0:
+            return feature_collection([], count=0, km=km, by_district={},
+                                      note="No support officers are loaded yet.")
         cur.execute(
             """SELECT f.id, f.facility_code, f.name, f.district, f.deployment_status,
                       d.officer_name, round((d.dist_m / 1000.0)::numeric, 1) AS distance_km,

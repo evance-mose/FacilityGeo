@@ -9,7 +9,8 @@
 CREATE EXTENSION IF NOT EXISTS postgis;
 CREATE EXTENSION IF NOT EXISTS pg_trgm;   -- fuzzy name matching (tracker matching)
 
--- Support officers (fictional; filled in by database/assign_officers.sql).
+-- Support officers. Starts EMPTY: no officers are shipped or invented. Insert real
+-- ones (see database/assign_officers.sql) to enable the nearest-officer features.
 CREATE TABLE IF NOT EXISTS support_officers (
     id            SERIAL PRIMARY KEY,
     name          VARCHAR(120) NOT NULL,
@@ -17,7 +18,7 @@ CREATE TABLE IF NOT EXISTS support_officers (
     longitude     DOUBLE PRECISION NOT NULL,
     geom          GEOMETRY(Point, 4326) NOT NULL,
     base_location TEXT,
-    is_simulated  BOOLEAN NOT NULL DEFAULT TRUE
+    is_simulated  BOOLEAN NOT NULL DEFAULT FALSE   -- TRUE only for made-up demo rows
 );
 CREATE INDEX IF NOT EXISTS officers_geom_gix ON support_officers USING GIST (geom);
 
@@ -119,7 +120,8 @@ CREATE INDEX IF NOT EXISTS districts_hdx_gix ON districts_hdx USING GIST (geom);
 
 -- Older databases created support_officers without these two columns.
 ALTER TABLE support_officers ADD COLUMN IF NOT EXISTS base_location TEXT;
-ALTER TABLE support_officers ADD COLUMN IF NOT EXISTS is_simulated BOOLEAN NOT NULL DEFAULT TRUE;
+ALTER TABLE support_officers ADD COLUMN IF NOT EXISTS is_simulated BOOLEAN NOT NULL DEFAULT FALSE;
+ALTER TABLE support_officers ALTER COLUMN is_simulated SET DEFAULT FALSE;
 
 -- Application role `geo`: data access only, no schema changes. Skipped if the
 -- role has not been created yet.

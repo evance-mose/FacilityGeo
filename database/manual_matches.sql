@@ -2,12 +2,10 @@
 -- Add one line per decision made by hand after reviewing the UNMATCHED report.
 -- Keyed by tracker name + district (not row_id), so it survives a CSV reload.
 --
--- Example (replace with real decisions):
---   ('Chimwemwe Private Clinic', 'Blantyre', 'abc123UID45'),
---
--- facility_code is the DHIS2 UID from facilities.facility_code.
--- When two facilities are true duplicates in DHIS2 (e.g. Ulumba Namatope-(WS)
--- in Zomba), pick one UID here; the other keeps the default not_started.
+-- facility_code is the DHIS2 UID from facilities.facility_code (find it with
+--   SELECT facility_code, name, district FROM facilities WHERE name ILIKE '%word%';).
+-- When two DHIS2 records are true duplicates, pick one UID here; the other
+-- stays 'not_in_tracker'.
 
 CREATE TEMP TABLE IF NOT EXISTS manual_matches (
     tracker_name     TEXT,
@@ -16,22 +14,13 @@ CREATE TEMP TABLE IF NOT EXISTS manual_matches (
 );
 TRUNCATE manual_matches;
 
--- Decisions below were made for the simulated tracker and the real one. A
--- different tracker simply will not match these names and they do nothing.
 INSERT INTO manual_matches (tracker_name, tracker_district, facility_code) VALUES
-    -- Real tracker: Kamuzu Central Hospital is listed in DHIS2 under its old
-    -- name, Lilongwe Central Hospital.
-    ('Kamuzu Central Hospital', 'Lilongwe', 'cFiiWO0mSVO'),
-    -- DHIS2 has two near-identical records at one point (differ only by brackets):
-    ('Chizumulo (St Marys) Health Centre', 'Likoma', 'Kzo3T3VQUwH'),
-    ('Chizumulo St Marys Heatlh Centre',   'Likoma', 'XXjX57Xslam'),
-    -- Typo with a clear single candidate just below the fuzzy threshold:
-    ('Chagnda', 'Salima', 'fe9EboFXU0V'),
-    -- True DHIS2 duplicate (same name, same coordinates, two UIDs): one row each.
-    ('Ulumba Namatope-(WS)',  'Zomba', 'rP44Po0Le85'),
-    ('UlumbaN amatope-(WS)',  'Zomba', 'u7i5Cr1ayFu');
--- Left unmatched on purpose: 8 tracker rows for facilities that are not in
--- DHIS2 (Chimwemwe Private Clinic, Mapale Community Clinic, ...).
+    -- Kamuzu Central Hospital is listed in DHIS2 under its old name, Lilongwe Central Hospital.
+    ('Kamuzu Central Hospital', 'Lilongwe', 'cFiiWO0mSVO');
+-- Still unmatched (no safe candidate, or two equally likely DHIS2 records) and
+-- waiting for a decision: Amecca, Chipande, Kachere, Khungulu, Nancholi, Ntonda,
+-- Soche Health Centre, Chilomoni, Zingwangwa (Blantyre); Biwi Health Centre
+-- (Lilongwe); Kaluluma HC (Kasungu); Mzuzu Central Hospital (Mzimba North).
 
 UPDATE tracker_raw t
 SET facility_id = m.facility_code, match_method = 'manual'

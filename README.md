@@ -1,10 +1,10 @@
 # FacilityGeo
 
-A database-driven web app that shows where a health-information-system rollout stands across health facilities in Malawi, where the gaps are, and which support officer is closest to each facility.
+A database-driven web app that shows where a health-information-system rollout stands across health facilities in Malawi, where the gaps are, and which not-started facilities sit close together.
 
 ![Overview](docs/app-overview.png)
 
-> **Data note.** Facility locations are real (DHIS2 organisation units), district polygons are real (HDX), and rollout and training status come from the real rollout tracker (59 facilities, of which 47 match a DHIS2 facility). The tracker lists only about 5% of the 908 facilities, so every other facility is shown as **Not in tracker** (status unknown, not "not started"). The four **support officers are simulated**, and the app says so on screen. The tracker has no equipment, internet or power columns, so those are not shown. No patient or personal data is held. The real tracker file is not in Git.
+> **Data note.** Facility locations are real (DHIS2 organisation units), district polygons are real (HDX), and rollout and training status come from the real rollout tracker (59 facilities, of which 47 match a DHIS2 facility). The tracker lists only about 5% of the 908 facilities, so every other facility is shown as **Not in tracker** (status unknown, not "not started"). **No simulated or seed data is used.** There are no support officers in the database, so the officer features (nearest officer, far from every officer) are hidden until real officers are loaded (see section 4). The tracker has no equipment, internet or power columns, so those are not shown. No patient or personal data is held. The real tracker file is not in Git.
 
 ## 1. The problem
 
@@ -12,8 +12,8 @@ The rollout team tracks progress in a spreadsheet. A spreadsheet cannot answer l
 
 - Which facilities are not live yet, and are they clustered?
 - Which districts are falling behind?
-- Which facilities have no internet or no power, and need a different approach?
-- Which support officer is nearest to each facility, and which facilities are far from every officer?
+- Which facilities have no internet or no power, and need a different approach? (The tracker has no such columns, so the app only shows this if the data is added.)
+- Where do we have no tracking information at all?
 
 ## 2. The solution
 
@@ -22,7 +22,7 @@ Facilities live in PostGIS. The API answers those questions with spatial SQL and
 | Question | Spatial method |
 |---|---|
 | Facilities within N km of a point | `ST_DWithin` on `geography` (metres) |
-| Nearest support officer | KNN `<->` to pick 3 candidates, then `ST_Distance(::geography)` for the true nearest |
+| Nearest support officer (only when real officers are loaded) | KNN `<->` to pick 3 candidates, then `ST_Distance(::geography)` for the true nearest |
 | Clusters of not-started facilities | `ST_ClusterDBSCAN` in EPSG:32736 (metres), with `ST_ConvexHull` outlines |
 | % live per district | `ST_Contains` / `GROUP BY` (cross-checked in QGIS) |
 | Matching tracker rows to facilities | DHIS2 code, exact name, core name (type words removed, unique in the district), then `pg_trgm` fuzzy name, then reviewed manual matches |
@@ -88,8 +88,9 @@ python scripts/xlsx_to_csv.py "/path/to/tracker.xlsx" data/tracker.csv  # only i
 python scripts/load_tracker.py data/tracker.csv                         # headers matched by name
 psql -d facilitygeo -f database/match_tracker.sql                       # code -> exact -> core name -> fuzzy; lists unmatched rows
 psql -d facilitygeo -f database/apply_tracker.sql                       # copy matched values into facilities
-psql -d facilitygeo -f database/assign_officers.sql                     # 4 fictional officers + nearest assignment
 ```
+
+**Support officers (optional).** The `support_officers` table starts empty and the app works without it. When you have real officer locations, insert them (the example is in the header of `database/assign_officers.sql`), then run `psql -d facilitygeo -f database/assign_officers.sql` to assign each facility its nearest officer. The officer layer, "nearest officer" and "far from every officer" appear in the app automatically.
 
 `data/mw_districts.geojson` is made from the HDX shapefile with `ogr2ogr` (the exact command is in the header of `scripts/load_districts.py`).
 
@@ -97,7 +98,7 @@ psql -d facilitygeo -f database/assign_officers.sql                     # 4 fict
 
 The tracker needs a facility name and a district. It may also have a go-live status, an end-user training status, a DHIS2 code, a go-live date, devices, staff trained, internet and power. Missing columns stay empty and are never invented. Facilities with no tracker row become `not_in_tracker`.
 
-If you have no tracker, `python scripts/make_simulated_tracker.py` writes a clearly labelled **simulated** one to `data/`. A 20-row simulated sample is in `sample_data/tracker_sample.csv`. The `data/` folder is ignored by Git so real files are never committed.
+The `data/` folder is ignored by Git so real files are never committed. No sample or generated tracker is included: without a tracker file every facility is `not_in_tracker`.
 
 **5. Run and check:**
 
@@ -113,15 +114,15 @@ pytest -q                              # 16 tests against the live database
 |---|---|
 | `GET /health` | database and PostGIS check |
 | `GET /facilities?status=&district=&limit=` | GeoJSON of facilities (status: `not_in_tracker`, `not_started`, `in_progress`, `live`) |
-| `POST /facilities` | add a facility (validated, nearest officer assigned) |
+| `POST /facilities` | add a facility (validated; nearest officer assigned if officers exist) |
 | `PATCH /facilities/{id}/status` | change rollout status |
 | `GET /stats/summary`, `GET /stats/districts?sort=` | KPIs (tracked, live, training) and % live of tracked facilities per district |
-| `GET /districts`, `GET /officers` | polygons with % live; officers |
-| `GET /analysis/nearest-officer?facility_id=` | nearest officer and distance |
+| `GET /districts`, `GET /officers` | polygons with % live; officers (empty until real officers are loaded) |
+| `GET /analysis/nearest-officer?facility_id=` | nearest officer and distance (404 while there are no officers) |
 | `GET /analysis/within-radius?lat=&lon=&radius_km=&status=` | facilities in a circle |
 | `GET /analysis/clusters?eps_km=15&min_points=5&status=not_started` | DBSCAN clusters with hulls |
 | `GET /analysis/no-connectivity` | no internet and/or no power |
-| `GET /analysis/far-from-officer?km=100` | facilities far from every officer |
+| `GET /analysis/far-from-officer?km=100` | facilities far from every officer (empty with a note while there are no officers) |
 | `GET /reports/missing-coordinates` | data-quality report |
 
 ## 6. QGIS and the MCP connection
@@ -138,7 +139,7 @@ To let an AI assistant drive QGIS:
 
 Safety rules used in this project: no code is run through the `execute_code` tool without reviewing it first, nothing is deleted, and nothing is written to the database from QGIS without approval.
 
-`scripts/compare_qgis_checks.py` compares PostGIS with two QGIS processing outputs. District counts agree exactly (903 facilities in a polygon; 5 fall outside every polygon). The nearest officer differs for 3 facilities that sit almost equally far from two officers (the two distances differ by only 430 to 632 m): QGIS measures in degrees, PostGIS in metres.
+`scripts/compare_qgis_checks.py` compares PostGIS with a QGIS processing output (`native:countpointsinpolygon`). District counts agree exactly: 903 facilities fall in a polygon and 5 fall outside every polygon, in both.
 
 ## 7. Data sources
 
@@ -148,20 +149,19 @@ Safety rules used in this project: no code is run through the `execute_code` too
 | 28 district polygons | HDX Malawi administrative boundaries | real, coarse |
 | Rollout and training status | Rollout tracker spreadsheet: 59 facilities, 47 matched to DHIS2 | real, small |
 | Devices, internet, power, go-live dates | not in the tracker | not available (empty) |
-| Support officers | `database/assign_officers.sql` | **simulated** |
-| Simulated tracker (for demos without the real file) | `scripts/make_simulated_tracker.py` | **simulated** |
+| Support officers | none loaded | not available (table empty) |
 
 ## 8. Limitations
 
 - **The tracker covers 59 facilities (about 5% of 908).** 861 facilities are `not_in_tracker`; their rollout status is unknown. "% live" is the share of the 47 matched tracked facilities (7 live = 14.9%). A district with one tracked facility can show 100%, so the chart prints the tracked count next to each percentage.
 - **12 of the 59 tracker rows are not matched**, so they are not on the map: Amecca, Chipande, Kachere, Khungulu, Nancholi and Ntonda (not found in Blantyre in DHIS2); Soche Health Centre, Biwi Health Centre, Kaluluma HC and Mzuzu Central Hospital (no safe candidate); Chilomoni and Zingwangwa (each has two DHIS2 records, a health centre and a BLM clinic, and the choice was not guessed). Biwi Health Centre is the tracker's only "In Progress" row, so the app shows 0 in progress. Resolve them in `database/manual_matches.sql`.
 - The tracker has no DHIS2 codes, so matching is by name. Core-name and fuzzy matches are listed by `match_tracker.sql` for review. Kamuzu Central Hospital is matched by hand to DHIS2's "Lilongwe Central Hospital".
-- Support officers are simulated, so nearest-officer results show the method, not real staffing. 158 of 908 facilities are more than 100 km from the nearest simulated officer.
+- **No support-officer data.** Nearest-officer and far-from-officer analysis is built and tested, but it only runs once real officer locations are loaded. Until then those parts of the app are hidden.
 - **No authentication.** The API and page are for localhost use. A production version needs sign-in, roles and HTTPS.
 - Local PostgreSQL uses `trust` authentication on localhost, so a wrong password is accepted. Use `scram-sha-256` in `pg_hba.conf` for anything shared.
 - HDX polygons are coarse: 5 facilities fall outside every polygon. DHIS2 splits Mzimba into North and South, HDX has one polygon.
 - Some coordinates look wrong (for example Zoa Dispensary, Kabuwa HC, Khosolo HC) and there is one duplicate DHIS2 org-unit pair. They are reported by `database/checks.sql` and not changed.
-- Distances are straight lines, not road distances (pgRouting is not installed), so "nearest officer" is not travel time.
+- Distances are straight lines, not road distances (pgRouting is not installed), so a future "nearest officer" would not be travel time.
 - DBSCAN results depend on the distance setting and the status chosen. The default (not started, 15 km, at least 5) finds one cluster of 24 facilities in Blantyre and Chiradzulu.
 
 ## 9. Repository layout
@@ -169,7 +169,7 @@ Safety rules used in this project: no code is run through the `execute_code` too
 ```
 app/        FastAPI app (config, db pool, schemas, endpoints)
 database/   setup.sql and the loading / matching / analysis SQL
-scripts/    loaders, xlsx converter, simulated tracker, QGIS cross-check
+scripts/    loaders, xlsx converter, QGIS cross-check
 frontend/   index.html + vendored Leaflet and Chart.js
 qgis/       project file and QML styles
 tests/      API tests

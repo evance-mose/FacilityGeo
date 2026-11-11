@@ -72,7 +72,10 @@ def test_create_update_and_duplicate(client):
     assert r.status_code == 201, r.text
     created = r.json()["facility"]
     fid = created["id"]
-    assert created["properties"]["support_officer"]            # nearest officer assigned
+    if client.get("/stats/summary").json()["officers"]:
+        assert created["properties"]["support_officer"]        # nearest officer assigned
+    else:
+        assert created["properties"]["support_officer"] is None  # no officers loaded yet
     assert created["geometry"]["coordinates"] == [35.319, -15.386]  # lon first
 
     assert client.post("/facilities", json=valid_body()).status_code == 409  # duplicate code
@@ -98,14 +101,19 @@ def test_stats_add_up(client):
     assert client.get("/stats/districts", params={"sort": "name;DROP TABLE facilities"}).status_code == 422
 
 
-def test_nearest_officer_matches_assignment(client):
+def test_nearest_officer(client):
     fid = client.get("/facilities", params={"limit": 1}).json()["features"][0]["id"]
     r = client.get("/analysis/nearest-officer", params={"facility_id": fid})
-    assert r.status_code == 200
-    body = r.json()
-    assert body["matches_assigned_officer"] is True
-    assert body["line"]["type"] == "LineString" and body["distance_m"] > 0
     assert client.get("/analysis/nearest-officer", params={"facility_id": 999999999}).status_code == 404
+    if client.get("/stats/summary").json()["officers"] == 0:
+        # No officers are shipped or invented: a clear message instead of an invented answer.
+        assert r.status_code == 404 and "No support officers" in r.json()["detail"]
+        assert client.get("/officers").json()["features"] == []
+    else:
+        assert r.status_code == 200
+        body = r.json()
+        assert body["matches_assigned_officer"] is True
+        assert body["line"]["type"] == "LineString" and body["distance_m"] > 0
 
 
 def test_within_radius_is_in_metres(client):
@@ -123,7 +131,11 @@ def test_clusters_report_officer_and_hull(client):
     body = r.json()
     assert body["clusters"] and body["clustered"] + body["noise"] == body["facilities_with_status"]
     first = body["clusters"][0]
-    assert first["nearest_officer"]["name"] and first["hull"]["type"] in ("Polygon", "LineString", "Point")
+    assert first["hull"]["type"] in ("Polygon", "LineString", "Point")
+    if client.get("/stats/summary").json()["officers"]:
+        assert first["nearest_officer"]["name"]
+    else:
+        assert first["nearest_officer"] is None  # clusters still work without officers
     assert client.get("/analysis/clusters", params={"eps_km": 0}).status_code == 422
 
 
@@ -133,6 +145,8 @@ def test_extra_analysis_endpoints(client):
     assert nc["count"] == len(nc["features"])
     far = client.get("/analysis/far-from-officer", params={"km": 100}).json()
     assert all(f["properties"]["distance_km"] > 100 for f in far["features"])
+    if client.get("/stats/summary").json()["officers"] == 0:
+        assert far["count"] == 0 and "No support officers" in far["note"]
     rep = client.get("/reports/missing-coordinates").json()
     assert set(rep["counts"]) == {"org_units_without_coordinates", "org_units_not_in_facilities",
                                   "tracker_rows_without_a_facility", "facilities_outside_their_district_polygon"}

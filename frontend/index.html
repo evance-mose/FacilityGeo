@@ -13,6 +13,7 @@
   header { grid-column: 1 / 3; display: flex; align-items: center; gap: 14px; padding: 8px 16px; background: #14213d; color: #fff; }
   header h1 { margin: 0; font-size: 18px; }
   header .sub { opacity: .8; font-size: 13px; }
+  header .sim[hidden] { display: none; }
   header .sim { margin-left: auto; background: #fca311; color: #14213d; padding: 3px 9px; border-radius: 12px; font-size: 12px; font-weight: 600; }
   aside { overflow-y: auto; background: var(--bg); border-right: 1px solid var(--line); padding: 12px; }
   #map { height: 100%; min-height: 400px; }
@@ -22,6 +23,7 @@
   .kpi span { color: var(--muted); font-size: 12px; }
   fieldset { border: 1px solid var(--line); border-radius: 8px; background: #fff; margin: 0 0 12px; padding: 8px 10px 10px; }
   legend { font-weight: 600; font-size: 13px; padding: 0 4px; }
+  [hidden] { display: none !important; }
   label { display: block; margin: 5px 0; }
   .row { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; }
   select, input[type=number], button { font: inherit; padding: 4px 8px; border: 1px solid #cdd2da; border-radius: 6px; background: #fff; }
@@ -62,8 +64,8 @@
 <div id="app">
   <header>
     <h1>FacilityGeo</h1>
-    <span class="sub">Where is the rollout across Malawi's health facilities, and who can support the gaps?</span>
-    <span class="sim" title="Facility locations are DHIS2 org units and rollout status is from the rollout tracker. The four support officers are fictional.">Support officers simulated</span>
+    <span class="sub">Where is the rollout across Malawi's health facilities, and where are the gaps?</span>
+    <span class="sim" id="simBadge" hidden title="Some support officers shown are simulated, for demonstration.">Support officers simulated</span>
   </header>
 
   <aside>
@@ -91,7 +93,7 @@
           <option value="">Nothing</option>
           <option value="no_internet">No internet recorded</option>
           <option value="no_power">No power recorded</option>
-          <option value="far">Far from every officer (&gt; 100 km)</option>
+          <option value="far" id="optFar" hidden disabled>Far from every officer (&gt; 100 km)</option>
         </select>
       </label>
       <div class="small" id="highlightInfo"></div>
@@ -101,7 +103,7 @@
       <legend>Layers</legend>
       <label><input type="checkbox" data-layer="districts" checked> Districts coloured by % live (of tracked)</label>
       <label><input type="checkbox" data-layer="facilities" checked> Facilities by status</label>
-      <label><input type="checkbox" data-layer="officers" checked> Support officers (simulated)</label>
+      <label id="officerLayerLabel" hidden><input type="checkbox" data-layer="officers" checked> Support officers</label>
       <label><input type="checkbox" data-layer="clusters" checked> Clusters</label>
     </fieldset>
 
@@ -122,7 +124,7 @@
         </label>
         <button id="findClusters" type="button">Find clusters</button>
       </div>
-      <div class="small" id="clusterInfo">Groups nearby facilities (DBSCAN, distance in metres in EPSG:32736) and names the nearest officer to each group.</div>
+      <div class="small" id="clusterInfo">Groups nearby facilities (DBSCAN, distance in metres in EPSG:32736).</div>
       <div id="clusterList"></div>
     </fieldset>
 
@@ -140,7 +142,7 @@
 
     <footer>
       Facility points: DHIS2 org units. District polygons: HDX. Rollout and training status: the rollout tracker; facilities
-      it does not list are shown as "Not in tracker" (status unknown, not "not started"). Support officers are fictional.
+      it does not list are shown as "Not in tracker" (status unknown, not "not started"). <span id="footNote"></span>
       No patient data is held. This app has no sign-in and is for local use only.
     </footer>
   </aside>
@@ -205,6 +207,7 @@ const layers = {
   tools: L.layerGroup().addTo(map),   // nearest-officer line, radius circle
 };
 const markers = new Map(); // facility id -> circleMarker
+let HAS_OFFICERS = false;   // set once /officers has loaded; officer features are hidden while there are none
 
 const legend = L.control({ position: "topright" });
 legend.onAdd = () => {
@@ -215,7 +218,7 @@ legend.onAdd = () => {
     "<b>District % live (of tracked)</b><br>" +
     PCT_CLASSES.slice().reverse().map(([min, c], i, a) => `<i style="background:${c}"></i>${min}${i < a.length - 1 ? "–" + a[i + 1][0] : "+"}%<br>`).join("") +
     `<i style="background:${NO_DATA}"></i>no tracker rows<br>` +
-    '<span class="small">★ support officer (simulated)</span>';
+    (HAS_OFFICERS ? '<span class="small">★ support officer</span>' : "");
   return div;
 };
 legend.addTo(map);
@@ -317,10 +320,9 @@ function popupHtml(p) {
       <tr><td>Staff trained</td><td>${esc(p.staff_trained ?? "not recorded")}</td></tr>
       <tr><td>Internet</td><td>${yesNo(p.has_internet)}</td></tr>
       <tr><td>Power</td><td>${yesNo(p.has_power)}</td></tr>
-      <tr><td>Assigned officer</td><td>${esc(p.support_officer || "none")}</td></tr>
-      <tr><td>Code</td><td>${esc(p.facility_code)}</td></tr>
+${HAS_OFFICERS ? `      <tr><td>Assigned officer</td><td>${esc(p.support_officer || "none")}</td></tr>\n` : ""}      <tr><td>Code</td><td>${esc(p.facility_code)}</td></tr>
     </table>
-    <div class="btns"><button type="button" data-act="officer">Show nearest officer</button></div>
+    ${HAS_OFFICERS ? '<div class="btns"><button type="button" data-act="officer">Show nearest officer</button></div>' : ""}
     <div class="btns">
       <select data-role="status">${options}</select>
       <button type="button" class="secondary" data-act="save">Update status</button>
@@ -370,7 +372,8 @@ function wirePopup(popup) {
   if (!box) return;
   const id = Number(box.dataset.id);
   const out = box.querySelector(".pmsg");
-  box.querySelector('[data-act="officer"]').onclick = async () => {
+  const officerBtn = box.querySelector('[data-act="officer"]');
+  if (officerBtn) officerBtn.onclick = async () => {
     try {
       const r = await api(`/analysis/nearest-officer?facility_id=${id}`);
       layers.tools.clearLayers();
@@ -408,6 +411,14 @@ map.on("popupopen", (e) => wirePopup(e.popup));
 async function loadOfficers() {
   const fc = await api("/officers");
   layers.officers.clearLayers();
+  HAS_OFFICERS = fc.features.length > 0;
+  // Officer features only exist when officers are loaded.
+  $("officerLayerLabel").hidden = !HAS_OFFICERS;
+  $("optFar").hidden = $("optFar").disabled = !HAS_OFFICERS;
+  const anySimulated = fc.features.some((f) => f.properties.is_simulated);
+  $("simBadge").hidden = !anySimulated;
+  $("footNote").textContent = anySimulated ? "The support officers shown are simulated." : "";
+  legend.remove(); legend.addTo(map);   // rebuild the legend (the star line depends on officers)
   for (const f of fc.features) {
     const [lon, lat] = f.geometry.coordinates, p = f.properties;
     L.marker([lat, lon], { icon: L.divIcon({ className: "", html: '<div class="officer-icon">★</div>', iconSize: [26, 26], iconAnchor: [13, 13] }) })
@@ -436,15 +447,15 @@ $("findClusters").addEventListener("click", async () => {
     const list = $("clusterList");
     list.innerHTML = "";
     r.clusters.forEach((c, i) => {
-      const o = c.nearest_officer;
+      const o = c.nearest_officer;   // null while no officers are loaded
       const layer = L.geoJSON(c.hull, {
         pane: "pClusters", style: { color: "#8b0000", weight: 2, dashArray: "6 4", fillColor: "#d62728", fillOpacity: 0.25 },
       }).bindPopup(`<div class="popup"><h3>Cluster ${i + 1}: ${c.size} ${esc(LABELS[r.status].toLowerCase())} facilities</h3>
         <div>${esc(c.districts.join(", "))}</div>
-        <div>Nearest officer: <b>${esc(o.name)}</b> (${esc(o.base_location)}), ${esc(o.distance_km)} km from the cluster centre</div></div>`)
+        ${o ? `<div>Nearest officer: <b>${esc(o.name)}</b> (${esc(o.base_location)}), ${esc(o.distance_km)} km from the cluster centre</div>` : ""}</div>`)
         .addTo(layers.clusters);
       const item = document.createElement("div");
-      item.textContent = `#${i + 1} · ${c.size} facilities · ${c.districts.slice(0, 3).join(", ")}${c.districts.length > 3 ? "…" : ""} · ${o.name} (${o.distance_km} km)`;
+      item.textContent = `#${i + 1} · ${c.size} facilities · ${c.districts.slice(0, 3).join(", ")}${c.districts.length > 3 ? "…" : ""}${o ? ` · ${o.name} (${o.distance_km} km)` : ""}`;
       item.onclick = () => { map.fitBounds(layer.getBounds().pad(0.3)); layer.openPopup(); highlightIds(c.facility_ids); };
       list.appendChild(item);
     });
