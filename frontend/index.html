@@ -6,160 +6,258 @@
 <title>FacilityGeo: rollout monitoring, Malawi</title>
 <link rel="stylesheet" href="/static/vendor/leaflet/leaflet.css">
 <style>
-  :root { --live:#2e9e44; --prog:#f39c12; --none:#d62728; --ink:#1f2933; --muted:#667085; --line:#e4e7ec; --bg:#f6f7f9; }
+  :root {
+    --bg: #f8fafc; --surface: #ffffff; --ink: #0f172a; --muted: #64748b; --line: #e2e8f0; --line-strong: #cbd5e1;
+    --accent: #0f766e; --danger: #b91c1c;
+    --live: #16a34a; --prog: #f59e0b; --none: #dc2626; --untracked: #94a3b8;
+    --radius: 12px; --shadow: 0 1px 2px rgba(15,23,42,.06), 0 4px 14px rgba(15,23,42,.08);
+  }
   * { box-sizing: border-box; }
-  html, body { height: 100%; margin: 0; font: 14px/1.4 -apple-system, "Segoe UI", Roboto, Helvetica, Arial, sans-serif; color: var(--ink); }
-  #app { display: grid; grid-template-columns: 390px 1fr; grid-template-rows: auto 1fr; height: 100%; }
-  header { grid-column: 1 / 3; display: flex; align-items: center; gap: 14px; padding: 8px 16px; background: #14213d; color: #fff; }
-  header h1 { margin: 0; font-size: 18px; }
-  header .sub { opacity: .8; font-size: 13px; }
-  header .sim[hidden] { display: none; }
-  header .sim { margin-left: auto; background: #fca311; color: #14213d; padding: 3px 9px; border-radius: 12px; font-size: 12px; font-weight: 600; }
-  aside { overflow-y: auto; background: var(--bg); border-right: 1px solid var(--line); padding: 12px; }
-  #map { height: 100%; min-height: 400px; }
-  .kpis { display: grid; grid-template-columns: repeat(3, 1fr); gap: 8px; margin-bottom: 12px; }
-  .kpi { background: #fff; border: 1px solid var(--line); border-radius: 8px; padding: 8px 10px; }
-  .kpi b { display: block; font-size: 20px; }
-  .kpi span { color: var(--muted); font-size: 12px; }
-  fieldset { border: 1px solid var(--line); border-radius: 8px; background: #fff; margin: 0 0 12px; padding: 8px 10px 10px; }
-  legend { font-weight: 600; font-size: 13px; padding: 0 4px; }
   [hidden] { display: none !important; }
-  label { display: block; margin: 5px 0; }
-  .row { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; }
-  select, input[type=number], button { font: inherit; padding: 4px 8px; border: 1px solid #cdd2da; border-radius: 6px; background: #fff; }
-  button { cursor: pointer; background: #14213d; color: #fff; border-color: #14213d; }
-  button.secondary { background: #fff; color: var(--ink); border-color: #cdd2da; }
-  button:disabled { opacity: .5; cursor: default; }
-  input[type=range] { width: 120px; }
-  .dot { display: inline-block; width: 10px; height: 10px; border-radius: 50%; margin-right: 4px; }
-  #msg { min-height: 20px; font-size: 13px; padding: 6px 8px; border-radius: 6px; background: #eef2ff; margin-bottom: 12px; }
-  #msg.err { background: #fee4e2; color: #b42318; }
-  #clusterList { max-height: 190px; overflow-y: auto; margin-top: 8px; font-size: 13px; }
-  #clusterList div { padding: 4px 6px; border-bottom: 1px solid var(--line); cursor: pointer; }
-  #clusterList div:hover { background: #fff4e5; }
-  #chartWrap { max-height: 360px; overflow-y: auto; background: #fff; border: 1px solid var(--line); border-radius: 8px; padding: 6px; }
+  html, body { height: 100%; margin: 0; }
+  body { font: 14px/1.45 -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif; color: var(--ink); background: var(--bg); -webkit-font-smoothing: antialiased; }
+
+  /* ---- layout ---- */
+  #app { display: grid; grid-template-columns: 410px 1fr; grid-template-rows: 56px 1fr; height: 100%; }
+  header { grid-column: 1 / 3; display: flex; align-items: center; gap: 12px; padding: 0 20px; background: var(--surface); border-bottom: 1px solid var(--line); z-index: 2; }
+  .brand { display: flex; align-items: center; gap: 10px; font-weight: 700; font-size: 17px; letter-spacing: -.01em; }
+  .brand svg { width: 26px; height: 26px; }
+  header .sub { color: var(--muted); font-size: 13px; padding-left: 12px; border-left: 1px solid var(--line); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  header .sim { margin-left: auto; background: #fef3c7; color: #92400e; padding: 3px 10px; border-radius: 999px; font-size: 12px; font-weight: 600; }
+
+  aside { display: flex; flex-direction: column; min-height: 0; background: var(--bg); border-right: 1px solid var(--line); }
+  #mapWrap { position: relative; min-height: 0; }
+  #map { position: absolute; inset: 0; background: #e8edf2; }
+
+  /* ---- tabs ---- */
+  .tabs { display: flex; gap: 4px; padding: 0 12px; background: var(--surface); border-bottom: 1px solid var(--line); position: sticky; top: 0; z-index: 3; }
+  .tab { appearance: none; background: none; border: 0; border-bottom: 2px solid transparent; padding: 12px 12px 10px; font: inherit; font-weight: 600; color: var(--muted); cursor: pointer; margin-bottom: -1px; border-radius: 0; }
+  .tab:hover { color: var(--ink); background: none; }
+  .tab[aria-selected="true"] { color: var(--accent); border-bottom-color: var(--accent); }
+  .tab:focus-visible, button:focus-visible, select:focus-visible, input:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+  .panel { flex: 1; overflow-y: auto; padding: 16px 14px 24px; }
+
+  /* ---- cards and text ---- */
+  .card { background: var(--surface); border: 1px solid var(--line); border-radius: var(--radius); padding: 14px; margin-bottom: 14px; }
+  .card h2 { margin: 0 0 10px; font-size: 13px; font-weight: 700; text-transform: uppercase; letter-spacing: .04em; color: var(--muted); }
+  .card h2 .hint { text-transform: none; letter-spacing: 0; font-weight: 400; }
   .small { color: var(--muted); font-size: 12px; }
-  .badge { color: #fff; padding: 1px 7px; border-radius: 10px; font-size: 12px; }
-  .popup h3 { margin: 0 0 4px; font-size: 15px; }
-  .popup table { border-collapse: collapse; margin: 4px 0; }
-  .popup td { padding: 1px 8px 1px 0; vertical-align: top; }
-  .popup td:first-child { color: var(--muted); }
-  .popup .btns { display: flex; gap: 6px; margin-top: 6px; flex-wrap: wrap; align-items: center; }
-  .popup .pmsg { margin-top: 5px; font-size: 12px; }
-  .legend { background: rgba(255,255,255,.92); padding: 8px 10px; border-radius: 8px; box-shadow: 0 1px 4px rgba(0,0,0,.3); font-size: 12px; line-height: 1.6; }
-  .legend i { display: inline-block; width: 14px; height: 12px; margin-right: 6px; opacity: .85; vertical-align: -1px; }
-  .officer-icon { background: #003399; color: #fff; border: 2px solid #fff; border-radius: 50%; width: 26px; height: 26px; line-height: 22px; text-align: center; font-size: 15px; box-shadow: 0 1px 4px rgba(0,0,0,.5); }
-  footer { font-size: 11px; color: var(--muted); padding: 4px 0 12px; }
-  /* Narrow windows: map on top, controls below, page scrolls. */
+  .note { display: flex; gap: 8px; margin: 0 0 14px; padding: 10px 12px; border-radius: 10px; background: #f1f5f9; color: #475569; font-size: 12.5px; }
+  .note::before { content: ""; flex: none; width: 8px; height: 8px; margin-top: 5px; border-radius: 50%; background: var(--untracked); }
+
+  /* ---- summary ---- */
+  .stats { display: grid; grid-template-columns: repeat(3, 1fr); gap: 10px; margin-bottom: 14px; }
+  .stat { background: var(--surface); border: 1px solid var(--line); border-radius: var(--radius); padding: 12px 12px 10px; }
+  .stat-v { font-size: 26px; font-weight: 700; letter-spacing: -.02em; line-height: 1.1; }
+  .stat-l { color: var(--muted); font-size: 12px; margin-top: 2px; }
+  .stat-s { color: var(--muted); font-size: 11.5px; }
+  .stat.accent .stat-v { color: var(--live); }
+  .bar { display: flex; height: 10px; border-radius: 999px; overflow: hidden; background: #eef2f6; margin: 8px 0 10px; }
+  .bar span { display: block; height: 100%; }
+  .bar span + span { box-shadow: -2px 0 0 var(--surface); }
+  .legend-row { display: flex; flex-wrap: wrap; gap: 4px 14px; font-size: 12.5px; }
+  .legend-row b { font-weight: 700; margin-left: 2px; }
+  .dot { display: inline-block; width: 9px; height: 9px; border-radius: 50%; margin-right: 6px; vertical-align: 0; }
+  .card .head { display: flex; justify-content: space-between; align-items: baseline; gap: 8px; }
+  .card .head h2 { margin: 0; }
+
+  /* ---- form controls ---- */
+  .field { display: block; margin: 0 0 12px; }
+  .field > span { display: block; font-size: 12px; font-weight: 600; color: var(--muted); margin-bottom: 4px; }
+  .grid2 { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
+  select, input[type=number] { width: 100%; font: inherit; padding: 8px 10px; border: 1px solid var(--line-strong); border-radius: 8px; background: var(--surface); color: var(--ink); }
+  select:hover, input[type=number]:hover { border-color: #94a3b8; }
+  button { font: inherit; font-weight: 600; padding: 8px 14px; border-radius: 8px; border: 1px solid var(--accent); background: var(--accent); color: #fff; cursor: pointer; }
+  button:hover { background: #115e59; border-color: #115e59; }
+  button.secondary { background: var(--surface); color: var(--ink); border-color: var(--line-strong); }
+  button.secondary:hover { background: #f1f5f9; border-color: #94a3b8; }
+  button:disabled { opacity: .5; cursor: default; }
+  button.block { width: 100%; }
+  input[type=range] { width: 100%; accent-color: var(--accent); margin: 2px 0; }
+  .range-head { display: flex; justify-content: space-between; font-size: 12px; font-weight: 600; color: var(--muted); }
+  .range-head b { color: var(--ink); }
+
+  /* toggle switch rows */
+  .toggle { display: flex; align-items: center; gap: 10px; margin: 0; padding: 9px 0; border-bottom: 1px solid var(--line); cursor: pointer; }
+  .toggle:last-child { border-bottom: 0; padding-bottom: 0; }
+  .toggle .txt { flex: 1; }
+  .toggle input { appearance: none; flex: none; width: 34px; height: 20px; margin: 0; border-radius: 999px; background: var(--line-strong); position: relative; cursor: pointer; transition: background .15s; }
+  .toggle input::after { content: ""; position: absolute; top: 2px; left: 2px; width: 16px; height: 16px; border-radius: 50%; background: #fff; box-shadow: 0 1px 2px rgba(0,0,0,.3); transition: transform .15s; }
+  .toggle input:checked { background: var(--accent); }
+  .toggle input:checked::after { transform: translateX(14px); }
+  .swatch { flex: none; width: 12px; height: 12px; border-radius: 3px; }
+
+  /* clusters */
+  #clusterList { margin-top: 10px; max-height: 260px; overflow-y: auto; }
+  #clusterList .item { display: flex; align-items: center; gap: 10px; padding: 8px; border-radius: 8px; cursor: pointer; }
+  #clusterList .item:hover { background: #f1f5f9; }
+  #clusterList .num { flex: none; width: 26px; height: 26px; border-radius: 50%; background: #fee2e2; color: var(--danger); font-weight: 700; font-size: 12px; display: grid; place-items: center; }
+  #clusterList .t { line-height: 1.3; }
+  #clusterList .t small { display: block; color: var(--muted); font-size: 12px; }
+  .info { margin-top: 10px; font-size: 12.5px; color: #475569; }
+  .info:empty { display: none; }
+
+  /* ---- map overlays ---- */
+  #msg { position: absolute; top: 12px; left: 50%; transform: translateX(-50%); z-index: 1000; width: max-content; max-width: min(70%, 620px); padding: 7px 14px; border-radius: 999px; background: rgba(255,255,255,.96); box-shadow: var(--shadow); font-size: 13px; font-weight: 500; text-align: center; pointer-events: none; }
+  #msg.err { background: #fee2e2; color: var(--danger); pointer-events: auto; }
+  .leaflet-container { font: inherit; }
+  .basemap { filter: saturate(.3) brightness(1.06) contrast(.95); }   /* mute the basemap so the data stands out */
+  .leaflet-container.crosshair { cursor: crosshair; }
+  .leaflet-bar { border: 0 !important; box-shadow: var(--shadow) !important; border-radius: 10px; overflow: hidden; }
+  .leaflet-bar a { color: var(--ink); border-bottom-color: var(--line) !important; }
+  .legend { background: rgba(255,255,255,.96); padding: 10px 12px; border-radius: var(--radius); box-shadow: var(--shadow); font-size: 12px; line-height: 1.7; min-width: 150px; }
+  .legend h4 { margin: 0 0 2px; font-size: 11px; text-transform: uppercase; letter-spacing: .05em; color: var(--muted); }
+  .legend h4:not(:first-child) { margin-top: 8px; }
+  .legend i { display: inline-block; width: 14px; height: 10px; margin-right: 7px; border-radius: 2px; vertical-align: 0; }
+  .officer-icon { background: #1d4ed8; color: #fff; border: 2px solid #fff; border-radius: 50%; width: 26px; height: 26px; line-height: 22px; text-align: center; font-size: 15px; box-shadow: var(--shadow); }
+
+  /* ---- popups ---- */
+  .leaflet-popup-content-wrapper { border-radius: var(--radius); box-shadow: var(--shadow); padding: 2px; }
+  .leaflet-popup-content { margin: 12px 14px; font-size: 13px; }
+  .popup h3 { margin: 0 0 4px; font-size: 15px; letter-spacing: -.01em; }
+  .popup .sub { color: var(--muted); margin-bottom: 4px; }
+  .badge { color: #fff; padding: 2px 9px; border-radius: 999px; font-size: 11.5px; font-weight: 600; white-space: nowrap; }
+  .popup table { border-collapse: collapse; margin: 8px 0 4px; width: 100%; }
+  .popup td { padding: 3px 12px 3px 0; vertical-align: top; border-top: 1px solid var(--line); }
+  .popup td:first-child { color: var(--muted); white-space: nowrap; }
+  .popup .btns { display: flex; gap: 6px; margin-top: 8px; flex-wrap: wrap; align-items: center; }
+  .popup .btns select { width: auto; flex: 1; padding: 6px 8px; }
+  .popup .btns button { padding: 6px 12px; }
+  .popup .pmsg { margin-top: 6px; font-size: 12px; color: var(--muted); }
+
+  footer { font-size: 12px; color: var(--muted); }
+  footer summary { cursor: pointer; font-weight: 600; margin-bottom: 6px; }
+  footer p { margin: 6px 0 0; }
+
+  /* ---- narrow windows: map on top, panel below ---- */
   @media (max-width: 900px) {
-    #app { grid-template-columns: 1fr; grid-template-rows: auto 62vh auto; height: auto; min-height: 100%; }
-    header { flex-wrap: wrap; }
-    header .sim { margin-left: 0; }
-    #map { grid-row: 2; height: 62vh; }
-    aside { grid-row: 3; overflow-y: visible; border-right: 0; border-top: 1px solid var(--line); }
+    #app { grid-template-columns: 1fr; grid-template-rows: 56px 58vh auto; height: auto; min-height: 100%; }
+    header .sub { display: none; }
+    header .sim { margin-left: auto; }
+    #mapWrap { grid-row: 2; height: 58vh; }
+    aside { grid-row: 3; border-right: 0; border-top: 1px solid var(--line); }
+    .panel { overflow: visible; }
+    .legend { display: none; }
   }
 </style>
 </head>
 <body>
 <div id="app">
   <header>
-    <h1>FacilityGeo</h1>
+    <div class="brand">
+      <svg viewBox="0 0 32 32" aria-hidden="true"><rect width="32" height="32" rx="8" fill="#0f766e"/><path d="M16 6.5c-3.9 0-7 3-7 6.8 0 4.9 7 12.2 7 12.2s7-7.3 7-12.2c0-3.8-3.1-6.8-7-6.8zm0 9.3a2.5 2.5 0 110-5 2.5 2.5 0 010 5z" fill="#fff"/></svg>
+      FacilityGeo
+    </div>
     <span class="sub">Where is the rollout across Malawi's health facilities, and where are the gaps?</span>
     <span class="sim" id="simBadge" hidden title="Some support officers shown are simulated, for demonstration.">Support officers simulated</span>
   </header>
 
   <aside>
-    <div class="kpis" id="kpis"></div>
-    <div class="small" id="kpiNote"></div>
-    <div id="msg">Loading...</div>
+    <nav class="tabs" role="tablist" aria-label="Sections">
+      <button class="tab" role="tab" id="t-overview" data-tab="overview" aria-selected="true" aria-controls="tab-overview">Overview</button>
+      <button class="tab" role="tab" id="t-explore" data-tab="explore" aria-selected="false" aria-controls="tab-explore">Explore</button>
+      <button class="tab" role="tab" id="t-analysis" data-tab="analysis" aria-selected="false" aria-controls="tab-analysis">Analysis</button>
+    </nav>
 
-    <fieldset>
-      <legend>Filter facilities</legend>
-      <div class="row">
-        <label>Status
-          <select id="fStatus">
-            <option value="">All</option>
-            <option value="not_in_tracker">Not in tracker</option>
-            <option value="not_started">Not started</option>
-            <option value="in_progress">In progress</option>
-            <option value="live">Live</option>
+    <!-- Overview -->
+    <div class="panel" id="tab-overview" role="tabpanel" aria-labelledby="t-overview">
+      <div id="kpis"></div>
+      <div class="note" id="kpiNote"></div>
+
+      <footer>
+        <details>
+          <summary>About the data</summary>
+          <p>Facility points: DHIS2 org units. District polygons: HDX. Rollout and training status: the rollout tracker; facilities
+          it does not list are shown as "Not in tracker" (status unknown, not "not started"). <span id="footNote"></span></p>
+          <p>No patient data is held. This app has no sign-in and is for local use only.</p>
+        </details>
+      </footer>
+    </div>
+
+    <!-- Explore -->
+    <div class="panel" id="tab-explore" role="tabpanel" aria-labelledby="t-explore" hidden>
+      <section class="card">
+        <div class="head"><h2>Filter facilities</h2><button class="secondary" id="fReset" type="button">Reset</button></div>
+        <div class="grid2" style="margin-top:12px">
+          <label class="field"><span>Status</span>
+            <select id="fStatus">
+              <option value="">All</option>
+              <option value="not_in_tracker">Not in tracker</option>
+              <option value="not_started">Not started</option>
+              <option value="in_progress">In progress</option>
+              <option value="live">Live</option>
+            </select>
+          </label>
+          <label class="field"><span>District</span>
+            <select id="fDistrict"><option value="">All</option></select>
+          </label>
+        </div>
+        <label class="field" style="margin-bottom:0"><span>Highlight</span>
+          <select id="fHighlight">
+            <option value="">Nothing</option>
+            <option value="no_internet">No internet recorded</option>
+            <option value="no_power">No power recorded</option>
+            <option value="far" id="optFar" hidden disabled>Far from every officer (&gt; 100 km)</option>
           </select>
         </label>
-        <label>District <select id="fDistrict"><option value="">All</option></select></label>
-        <button class="secondary" id="fReset" type="button">Reset</button>
-      </div>
-      <label>Highlight
-        <select id="fHighlight">
-          <option value="">Nothing</option>
-          <option value="no_internet">No internet recorded</option>
-          <option value="no_power">No power recorded</option>
-          <option value="far" id="optFar" hidden disabled>Far from every officer (&gt; 100 km)</option>
-        </select>
-      </label>
-      <div class="small" id="highlightInfo"></div>
-    </fieldset>
+        <div class="info" id="highlightInfo"></div>
+      </section>
 
-    <fieldset>
-      <legend>Layers</legend>
-      <label><input type="checkbox" data-layer="districts" checked> Districts coloured by % live (of tracked)</label>
-      <label><input type="checkbox" data-layer="facilities" checked> Facilities by status</label>
-      <label id="officerLayerLabel" hidden><input type="checkbox" data-layer="officers" checked> Support officers</label>
-      <label><input type="checkbox" data-layer="clusters" checked> Clusters</label>
-    </fieldset>
+      <section class="card">
+        <h2>Map layers</h2>
+        <label class="toggle"><span class="swatch" style="background:#fc8d59"></span><span class="txt">Districts, coloured by % live</span><input type="checkbox" data-layer="districts" checked></label>
+        <label class="toggle"><span class="swatch" style="background:var(--none);border-radius:50%"></span><span class="txt">Facilities, by status</span><input type="checkbox" data-layer="facilities" checked></label>
+        <label class="toggle" id="officerLayerLabel" hidden><span class="swatch" style="background:#1d4ed8;border-radius:50%"></span><span class="txt">Support officers</span><input type="checkbox" data-layer="officers" checked></label>
+        <label class="toggle"><span class="swatch" style="background:#fecaca;border:1px dashed var(--danger)"></span><span class="txt">Clusters</span><input type="checkbox" data-layer="clusters" checked></label>
+      </section>
+    </div>
 
-    <fieldset>
-      <legend>Clusters of facilities with the chosen status</legend>
-      <div class="row">
-        <label>Distance <input type="range" id="eps" min="5" max="60" step="1" value="15"> <b id="epsVal">15</b> km</label>
-      </div>
-      <div class="row">
-        <label>Min facilities <input type="number" id="minPts" min="2" max="50" value="5" style="width:64px"></label>
-        <label>Status
-          <select id="cStatus">
-            <option value="not_started" selected>Not started</option>
-            <option value="in_progress">In progress</option>
-            <option value="live">Live</option>
-            <option value="not_in_tracker">Not in tracker</option>
-          </select>
-        </label>
-        <button id="findClusters" type="button">Find clusters</button>
-      </div>
-      <div class="small" id="clusterInfo">Groups nearby facilities (DBSCAN, distance in metres in EPSG:32736).</div>
-      <div id="clusterList"></div>
-    </fieldset>
+    <!-- Analysis -->
+    <div class="panel" id="tab-analysis" role="tabpanel" aria-labelledby="t-analysis" hidden>
+      <section class="card">
+        <h2>Clusters <span class="hint">of facilities with one status</span></h2>
+        <div class="range-head"><span>Distance</span><span><b id="epsVal">15</b> km</span></div>
+        <input type="range" id="eps" min="5" max="60" step="1" value="15">
+        <div class="grid2" style="margin-top:10px">
+          <label class="field"><span>Min facilities</span><input type="number" id="minPts" min="2" max="50" value="5"></label>
+          <label class="field"><span>Status</span>
+            <select id="cStatus">
+              <option value="not_started" selected>Not started</option>
+              <option value="in_progress">In progress</option>
+              <option value="live">Live</option>
+              <option value="not_in_tracker">Not in tracker</option>
+            </select>
+          </label>
+        </div>
+        <button id="findClusters" class="block" type="button">Find clusters</button>
+        <div class="info" id="clusterInfo">Groups nearby facilities (DBSCAN, distance in metres in EPSG:32736).</div>
+        <div id="clusterList"></div>
+      </section>
 
-    <fieldset>
-      <legend>Facilities within a radius</legend>
-      <label><input type="checkbox" id="radiusOn"> Click the map to count facilities within
-        <input type="number" id="radiusKm" min="1" max="500" value="20" style="width:64px"> km</label>
-      <div class="small" id="radiusInfo"></div>
-    </fieldset>
-
-    <fieldset>
-      <legend>Districts ranked by % live of tracked facilities (click a bar to filter)</legend>
-      <div id="chartWrap"><div id="chartBox" style="position:relative"><canvas id="chart"></canvas></div></div>
-    </fieldset>
-
-    <footer>
-      Facility points: DHIS2 org units. District polygons: HDX. Rollout and training status: the rollout tracker; facilities
-      it does not list are shown as "Not in tracker" (status unknown, not "not started"). <span id="footNote"></span>
-      No patient data is held. This app has no sign-in and is for local use only.
-    </footer>
+      <section class="card">
+        <h2>Facilities within a radius</h2>
+        <label class="toggle"><span class="txt">Click the map to count facilities</span><input type="checkbox" id="radiusOn"></label>
+        <label class="field" style="margin:12px 0 0"><span>Radius (km)</span><input type="number" id="radiusKm" min="1" max="500" value="20"></label>
+        <div class="info" id="radiusInfo"></div>
+      </section>
+    </div>
   </aside>
 
-  <div id="map"></div>
+  <div id="mapWrap">
+    <div id="map"></div>
+    <div id="msg">Loading...</div>
+  </div>
 </div>
 
 <script src="/static/vendor/leaflet/leaflet.js"></script>
-<script src="/static/vendor/chart.umd.min.js"></script>
 <script>
 "use strict";
 
-const COLORS = { live: "#2e9e44", in_progress: "#f39c12", not_started: "#d62728", not_in_tracker: "#9aa3af" };
+const COLORS = { live: "#16a34a", in_progress: "#f59e0b", not_started: "#dc2626", not_in_tracker: "#94a3b8" };
 const LABELS = { live: "Live", in_progress: "In progress", not_started: "Not started", not_in_tracker: "Not in tracker" };
 const SETTABLE = ["not_started", "in_progress", "live"];   // statuses a user can set
 const TRAINING = { done: "Done", in_progress: "In progress", not_started: "Not started" };
-const NO_DATA = "#d0d5dd";
+const NO_DATA = "#e2e8f0";
 const PCT_CLASSES = [[80, "#1a9850"], [60, "#a6d96a"], [40, "#fee08b"], [20, "#fc8d59"], [0, "#d73027"]];
 
 const $ = (id) => document.getElementById(id);
@@ -171,6 +269,7 @@ function notify(text, isError = false) {
   const el = $("msg");
   el.textContent = text;
   el.className = isError ? "err" : "";
+  el.hidden = !text;
 }
 
 async function api(path, options) {
@@ -183,13 +282,21 @@ async function api(path, options) {
   return res.json();
 }
 
+/* ----------------------------------------------------------------- tabs */
+function showTab(name) {
+  document.querySelectorAll(".tab").forEach((t) => t.setAttribute("aria-selected", String(t.dataset.tab === name)));
+  document.querySelectorAll(".panel").forEach((p) => (p.hidden = p.id !== "tab-" + name));
+}
+document.querySelectorAll(".tab").forEach((t) => t.addEventListener("click", () => showTab(t.dataset.tab)));
+
 /* ------------------------------------------------------------------ map */
 const MALAWI_BOUNDS = [[-17.2, 32.6], [-9.3, 35.95]];
 const map = L.map("map", { zoomSnap: 0.25 }).fitBounds(MALAWI_BOUNDS);
 // Keep Leaflet's cached size correct when the layout changes (window resize, stacked layout).
 new ResizeObserver(() => map.invalidateSize()).observe(document.getElementById("map"));
 L.tileLayer("https://tile.openstreetmap.org/{z}/{x}/{y}.png", {
-  maxZoom: 18, attribution: "&copy; OpenStreetMap contributors",
+  maxZoom: 18, className: "basemap",
+  attribution: "&copy; <a href='https://www.openstreetmap.org/copyright'>OpenStreetMap</a> contributors",
 }).addTo(map);
 map.createPane("pDistricts").style.zIndex = 300;
 map.createPane("pClusters").style.zIndex = 420;
@@ -207,36 +314,56 @@ const layers = {
   tools: L.layerGroup().addTo(map),   // nearest-officer line, radius circle
 };
 const markers = new Map(); // facility id -> circleMarker
+
 let HAS_OFFICERS = false;   // set once /officers has loaded; officer features are hidden while there are none
 
-const legend = L.control({ position: "topright" });
+const legend = L.control({ position: "bottomleft" });
 legend.onAdd = () => {
   const div = L.DomUtil.create("div", "legend");
   div.innerHTML =
-    "<b>Facility status</b><br>" +
-    Object.keys(COLORS).map((k) => `<span class="dot" style="background:${COLORS[k]}"></span>${LABELS[k]}<br>`).join("") +
-    "<b>District % live (of tracked)</b><br>" +
-    PCT_CLASSES.slice().reverse().map(([min, c], i, a) => `<i style="background:${c}"></i>${min}${i < a.length - 1 ? "–" + a[i + 1][0] : "+"}%<br>`).join("") +
-    `<i style="background:${NO_DATA}"></i>no tracker rows<br>` +
-    (HAS_OFFICERS ? '<span class="small">★ support officer</span>' : "");
+    "<h4>Facility status</h4>" +
+    Object.keys(COLORS).map((k) => `<div><span class="dot" style="background:${COLORS[k]}"></span>${LABELS[k]}</div>`).join("") +
+    "<h4>District % live (of tracked)</h4>" +
+    PCT_CLASSES.slice().reverse().map(([min, c], i, a) => `<div><i style="background:${c}"></i>${min}${i < a.length - 1 ? "–" + a[i + 1][0] : "+"}%</div>`).join("") +
+    `<div><i style="background:${NO_DATA}"></i>no tracker rows</div>` +
+    (HAS_OFFICERS ? '<div class="small">★ support officer</div>' : "");
   return div;
 };
 legend.addTo(map);
 
-/* ------------------------------------------------------------ summary + chart */
-let chart = null;
+/* ------------------------------------------------------------------ summary */
+function stackBar(title, subtitle, items) {
+  const total = items.reduce((a, [, v]) => a + v, 0);
+  const segs = items.filter(([, v]) => v > 0)
+    .map(([label, v, c]) => `<span style="width:${(100 * v / total).toFixed(2)}%;background:${c}" title="${esc(label)}: ${v}"></span>`).join("");
+  const keys = items.map(([label, v, c]) => `<span><span class="dot" style="background:${c}"></span>${esc(label)} <b>${v}</b></span>`).join("");
+  return `<section class="card">
+    <div class="head"><h2>${esc(title)}</h2><span class="small">${esc(subtitle)}</span></div>
+    <div class="bar">${segs}</div>
+    <div class="legend-row">${keys}</div>
+  </section>`;
+}
+
 async function loadSummary() {
   const s = await api("/stats/summary");
-  const cards = [
-    ["Facilities", s.facilities], ["In tracker", s.tracked], ["Live", `${s.live} (${s.pct_live ?? "–"}%)`],
-    ["Not started", s.not_started], ["In progress", s.in_progress], ["Not in tracker", s.not_in_tracker],
-    ["Training done", s.training_done], ["Training in progress", s.training_in_progress], ["Training not started", s.training_not_started],
-  ];
-  if (s.internet_recorded) cards.push(["No internet", s.no_internet]);
-  if (s.power_recorded) cards.push(["No power", s.no_power]);
-  $("kpis").innerHTML = cards.map(([label, value]) => `<div class="kpi"><b>${esc(value)}</b><span>${esc(label)}</span></div>`).join("");
-  $("kpiNote").textContent = `Live % is the share of the ${s.tracked} facilities in the tracker. ` +
-    `The other ${s.not_in_tracker} are not listed, so their status is unknown.`;
+  const stat = (label, value, sub, cls = "") =>
+    `<div class="stat ${cls}"><div class="stat-v">${esc(value)}</div><div class="stat-l">${esc(label)}</div>${sub ? `<div class="stat-s">${esc(sub)}</div>` : ""}</div>`;
+  const trainTotal = s.training_done + s.training_in_progress + s.training_not_started;
+  let html =
+    `<div class="stats">${stat("Facilities", s.facilities)}${stat("In tracker", s.tracked)}` +
+    `${stat("Live", s.pct_live == null ? "–" : s.pct_live + "%", `${s.live} of ${s.tracked}`, "accent")}</div>` +
+    stackBar("Rollout status", `${s.tracked} tracked facilities`, [
+      ["Live", s.live, COLORS.live], ["In progress", s.in_progress, COLORS.in_progress], ["Not started", s.not_started, COLORS.not_started],
+    ]) +
+    stackBar("End-user training", `${trainTotal} with training recorded`, [
+      ["Done", s.training_done, "#2563eb"], ["In progress", s.training_in_progress, "#93c5fd"], ["Not started", s.training_not_started, "#cbd5e1"],
+    ]);
+  if (s.internet_recorded || s.power_recorded) {
+    html += `<div class="stats">${s.internet_recorded ? stat("No internet", s.no_internet) : ""}${s.power_recorded ? stat("No power", s.no_power) : ""}</div>`;
+  }
+  $("kpis").innerHTML = html;
+  $("kpiNote").textContent = `${s.not_in_tracker} facilities are not in the tracker, so their status is unknown. ` +
+    `They are not counted as "not started", and % live is out of the ${s.tracked} tracked facilities.`;
   // The tracker has no internet or power columns: only offer those highlights when data exists.
   for (const [value, recorded, label] of [["no_internet", s.internet_recorded, "No internet recorded"], ["no_power", s.power_recorded, "No power recorded"]]) {
     const opt = $("fHighlight").querySelector(`[value="${value}"]`);
@@ -245,44 +372,12 @@ async function loadSummary() {
   }
 }
 
-async function loadChart() {
-  const rows = await api("/stats/districts?sort=pct_live_desc");
-  const KEYS = ["live", "in_progress", "not_started", "not_in_tracker"];
-  const pct = (r, key) => (100 * r[key]) / r.total;
-  $("chartBox").style.height = rows.length * 20 + 70 + "px";
-  if (chart) chart.destroy();
-  chart = new Chart($("chart"), {
-    type: "bar",
-    data: {
-      labels: rows.map((r) => `${r.district} (${r.tracked ? r.pct_live + "% of " + r.tracked : "none"} tracked)`),
-      datasets: KEYS.map((k) => ({
-        label: LABELS[k], backgroundColor: COLORS[k], data: rows.map((r) => pct(r, k)),
-      })),
-    },
-    options: {
-      indexAxis: "y", responsive: true, maintainAspectRatio: false,
-      scales: {
-        x: { stacked: true, max: 100, title: { display: true, text: "% of the district's facilities" } },
-        y: { stacked: true, ticks: { font: { size: 11 } } },
-      },
-      plugins: {
-        legend: { position: "bottom" },
-        tooltip: { callbacks: { label: (c) => {
-          const r = rows[c.dataIndex], k = KEYS[c.datasetIndex];
-          return `${c.dataset.label}: ${r[k]} of ${r.total} (${c.parsed.x.toFixed(1)}%)`;
-        } } },
-      },
-      onClick: (_, els) => {
-        if (!els.length) return;
-        $("fDistrict").value = rows[els[0].index].district;
-        applyFilters(true);
-      },
-    },
-  });
+// Fill the District filter once, from the districts that have facilities.
+async function loadDistrictOptions() {
   const sel = $("fDistrict");
-  if (sel.options.length === 1) {
-    rows.map((r) => r.district).sort().forEach((d) => sel.add(new Option(d, d)));
-  }
+  if (sel.options.length > 1) return;
+  const rows = await api("/stats/districts?sort=pct_live_desc");
+  rows.map((r) => r.district).sort().forEach((d) => sel.add(new Option(d, d)));
 }
 
 /* ---------------------------------------------------------------- districts */
@@ -291,7 +386,7 @@ async function loadDistricts() {
   layers.districts.clearLayers();
   L.geoJSON(fc, {
     pane: "pDistricts",
-    style: (f) => ({ color: "#5b6573", weight: 1, fillColor: f.properties.tracked ? pctColor(f.properties.pct_live) : NO_DATA, fillOpacity: 0.55 }),
+    style: (f) => ({ color: "#94a3b8", weight: 1, fillColor: f.properties.tracked ? pctColor(f.properties.pct_live) : NO_DATA, fillOpacity: f.properties.tracked ? 0.5 : 0.35 }),
     onEachFeature: (f, layer) => {
       const p = f.properties;
       layer.bindTooltip(p.tracked
@@ -303,7 +398,7 @@ async function loadDistricts() {
 
 /* --------------------------------------------------------------- facilities */
 function statusBadge(s) {
-  return `<span class="badge" style="background:${COLORS[s] || "#667085"}">${esc(LABELS[s] || s)}</span>`;
+  return `<span class="badge" style="background:${COLORS[s] || "#64748b"}">${esc(LABELS[s] || s)}</span>`;
 }
 
 function popupHtml(p) {
@@ -312,7 +407,7 @@ function popupHtml(p) {
     SETTABLE.map((k) => `<option value="${k}" ${k === p.deployment_status ? "selected" : ""}>${LABELS[k]}</option>`).join("");
   return `<div class="popup" data-id="${p.id}">
     <h3>${esc(p.name)}</h3>
-    <div>${esc(p.district)}${p.facility_type ? " · " + esc(p.facility_type) : ""} · ${statusBadge(p.deployment_status)}</div>
+    <div class="sub">${esc(p.district)}${p.facility_type ? " · " + esc(p.facility_type) : ""} &nbsp;${statusBadge(p.deployment_status)}</div>
     <table>
       <tr><td>Training</td><td>${esc(TRAINING[p.training_status] || "not recorded")}</td></tr>
       <tr><td>Go-live</td><td>${esc(p.go_live_date || "not recorded")}</td></tr>
@@ -335,8 +430,8 @@ function styleMarker(m, highlighted = false) {
   const p = m.feature.properties;
   const untracked = p.deployment_status === "not_in_tracker";
   m.setStyle({
-    radius: highlighted ? 8 : untracked ? 3.5 : 6, weight: highlighted ? 3 : untracked ? 0.5 : 1.5,
-    color: highlighted ? "#111" : "#fff", fillColor: COLORS[p.deployment_status] || "#667085",
+    radius: highlighted ? 8 : untracked ? 3.5 : 6.5, weight: highlighted ? 3 : untracked ? 0.5 : 1.5,
+    color: highlighted ? "#0f172a" : "#fff", fillColor: COLORS[p.deployment_status] || "#64748b",
     fillOpacity: untracked && !highlighted ? 0.55 : 0.95,
   });
   if (highlighted) m.bringToFront();
@@ -354,7 +449,7 @@ async function loadFacilities(fit = false) {
     const m = L.circleMarker([lat, lon], { pane: f.properties.deployment_status === "not_in_tracker" ? "pUntracked" : "pFacilities" });
     m.feature = f;
     styleMarker(m);
-    m.bindPopup(() => popupHtml(m.feature.properties), { minWidth: 250 });
+    m.bindPopup(() => popupHtml(m.feature.properties), { minWidth: 260 });
     m.addTo(layers.facilities);
     markers.set(f.properties.id, m);
   }
@@ -378,7 +473,7 @@ function wirePopup(popup) {
       const r = await api(`/analysis/nearest-officer?facility_id=${id}`);
       layers.tools.clearLayers();
       const pts = r.line.coordinates.map(([lon, lat]) => [lat, lon]);
-      L.polyline(pts, { pane: "pTools", color: "#003399", weight: 3, dashArray: "6 6" }).addTo(layers.tools);
+      L.polyline(pts, { pane: "pTools", color: "#1d4ed8", weight: 3, dashArray: "6 6" }).addTo(layers.tools);
       map.fitBounds(L.latLngBounds(pts).pad(0.4));
       out.textContent = `Nearest officer: ${r.officer.name} (${r.officer.base_location}), ${r.distance_km} km away` +
         (r.matches_assigned_officer ? " (the assigned officer)" : " (differs from the assigned officer)");
@@ -401,7 +496,7 @@ function wirePopup(popup) {
         wirePopup(m.getPopup());
         m.getPopup().getElement().querySelector(".pmsg").textContent = "Saved: " + LABELS[r.deployment_status];
       }
-      await Promise.all([loadSummary(), loadChart(), loadDistricts()]);
+      await Promise.all([loadSummary(), loadDistricts()]);
     } catch (err) { out.textContent = "Error: " + err.message; }
   };
 }
@@ -422,7 +517,7 @@ async function loadOfficers() {
   for (const f of fc.features) {
     const [lon, lat] = f.geometry.coordinates, p = f.properties;
     L.marker([lat, lon], { icon: L.divIcon({ className: "", html: '<div class="officer-icon">★</div>', iconSize: [26, 26], iconAnchor: [13, 13] }) })
-      .bindPopup(`<div class="popup"><h3>${esc(p.name)}</h3><div>${esc(p.base_location)}</div>
+      .bindPopup(`<div class="popup"><h3>${esc(p.name)}</h3><div class="sub">${esc(p.base_location)}</div>
         <div>${esc(p.facilities)} facilities assigned (nearest officer)</div>
         <div class="small">${p.is_simulated ? "Simulated officer, for demonstration" : ""}</div></div>`)
       .addTo(layers.officers);
@@ -449,13 +544,15 @@ $("findClusters").addEventListener("click", async () => {
     r.clusters.forEach((c, i) => {
       const o = c.nearest_officer;   // null while no officers are loaded
       const layer = L.geoJSON(c.hull, {
-        pane: "pClusters", style: { color: "#8b0000", weight: 2, dashArray: "6 4", fillColor: "#d62728", fillOpacity: 0.25 },
+        pane: "pClusters", style: { color: "#b91c1c", weight: 2, dashArray: "6 4", fillColor: "#dc2626", fillOpacity: 0.2 },
       }).bindPopup(`<div class="popup"><h3>Cluster ${i + 1}: ${c.size} ${esc(LABELS[r.status].toLowerCase())} facilities</h3>
-        <div>${esc(c.districts.join(", "))}</div>
+        <div class="sub">${esc(c.districts.join(", "))}</div>
         ${o ? `<div>Nearest officer: <b>${esc(o.name)}</b> (${esc(o.base_location)}), ${esc(o.distance_km)} km from the cluster centre</div>` : ""}</div>`)
         .addTo(layers.clusters);
       const item = document.createElement("div");
-      item.textContent = `#${i + 1} · ${c.size} facilities · ${c.districts.slice(0, 3).join(", ")}${c.districts.length > 3 ? "…" : ""}${o ? ` · ${o.name} (${o.distance_km} km)` : ""}`;
+      item.className = "item";
+      item.innerHTML = `<span class="num">${i + 1}</span><span class="t"><b>${c.size} facilities</b>` +
+        `<small>${esc(c.districts.slice(0, 3).join(", "))}${c.districts.length > 3 ? "…" : ""}${o ? ` · ${esc(o.name)} (${esc(o.distance_km)} km)` : ""}</small></span>`;
       item.onclick = () => { map.fitBounds(layer.getBounds().pad(0.3)); layer.openPopup(); highlightIds(c.facility_ids); };
       list.appendChild(item);
     });
@@ -486,7 +583,7 @@ async function applyHighlight() {
     }
     for (const f of fc.features) {
       const [lon, lat] = f.geometry.coordinates;
-      L.circleMarker([lat, lon], { pane: "pHighlight", radius: 10, color: "#111", weight: 2, fill: false, interactive: false }).addTo(layers.highlight);
+      L.circleMarker([lat, lon], { pane: "pHighlight", radius: 10, color: "#0f172a", weight: 2, fill: false, interactive: false }).addTo(layers.highlight);
     }
     $("highlightInfo").textContent = text;
   } catch (err) { notify(err.message, true); }
@@ -494,6 +591,7 @@ async function applyHighlight() {
 $("fHighlight").addEventListener("change", applyHighlight);
 
 /* -------------------------------------------------------------------- radius */
+$("radiusOn").addEventListener("change", () => $("map").classList.toggle("crosshair", $("radiusOn").checked));
 map.on("click", async (e) => {
   if (!$("radiusOn").checked) return;
   const km = Number($("radiusKm").value);
@@ -503,7 +601,7 @@ map.on("click", async (e) => {
     if ($("fStatus").value) q.set("status", $("fStatus").value);
     const r = await api("/analysis/within-radius?" + q);
     layers.tools.clearLayers();
-    L.circle(e.latlng, { pane: "pTools", radius: km * 1000, color: "#003399", weight: 2, fillOpacity: 0.06, interactive: false }).addTo(layers.tools);
+    L.circle(e.latlng, { pane: "pTools", radius: km * 1000, color: "#1d4ed8", weight: 2, fillOpacity: 0.06, interactive: false }).addTo(layers.tools);
     const parts = Object.entries(r.by_status).map(([k, v]) => `${LABELS[k]}: ${v}`).join(", ");
     $("radiusInfo").textContent = `${r.count} facilities within ${km} km${parts ? " (" + parts + ")" : ""}.`;
   } catch (err) {
@@ -528,7 +626,7 @@ document.querySelectorAll("[data-layer]").forEach((cb) =>
 /* --------------------------------------------------------------------- start */
 (async function init() {
   try {
-    await Promise.all([loadSummary(), loadChart(), loadDistricts(), loadOfficers()]);
+    await Promise.all([loadSummary(), loadDistrictOptions(), loadDistricts(), loadOfficers()]);
     await loadFacilities(false);
     map.invalidateSize();            // layout is final now; refit to the real map size
     map.fitBounds(MALAWI_BOUNDS);

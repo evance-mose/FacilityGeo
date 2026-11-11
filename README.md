@@ -33,14 +33,14 @@ flowchart LR
     B[HDX district polygons] -->|scripts/load_districts.py| P
     C[Rollout tracker .xlsx to CSV] -->|scripts/load_tracker.py + match/apply SQL| P
     P --> F[FastAPI + psycopg2 pool]
-    F -->|GeoJSON / JSON| L[Leaflet + Chart.js page]
+    F -->|GeoJSON / JSON| L[Leaflet page]
     P <-->|local connection| Q[QGIS 3.44]
     Q <-->|MCP, localhost only| M[AI assistant]
 ```
 
 - **Database:** local PostgreSQL 17 with PostGIS 3.7 and `pg_trgm`. No Docker.
 - **API:** FastAPI, parameterised queries only, inputs validated with pydantic. `/docs` has the interactive reference.
-- **Frontend:** one HTML file, Leaflet and Chart.js vendored in `frontend/vendor/` (works offline apart from map tiles). No build step.
+- **Frontend:** one HTML file with three tabs (Overview, Explore, Analysis), Leaflet vendored in `frontend/vendor/` (works offline apart from map tiles). No build step.
 - **QGIS:** project `qgis/facilitygeo.qgz` with styled layers and cross-checks against PostGIS.
 
 ## 4. Setup (local PostgreSQL)
@@ -149,7 +149,7 @@ Safety rules used in this project: no code is run through the `execute_code` too
 
 ## 8. Limitations
 
-- **The tracker covers 59 facilities (about 5% of 908).** 861 facilities are `not_in_tracker`; their rollout status is unknown. "% live" is the share of the 47 matched tracked facilities (7 live = 14.9%). A district with one tracked facility can show 100%, so the chart prints the tracked count next to each percentage.
+- **The tracker covers 59 facilities (about 5% of 908).** 861 facilities are `not_in_tracker`; their rollout status is unknown. "% live" is the share of the 47 matched tracked facilities (7 live = 14.9%). A district with one tracked facility can show 100%, so the district tooltip on the map prints the tracked count next to each percentage.
 - **12 of the 59 tracker rows are not matched**, so they are not on the map: Amecca, Chipande, Kachere, Khungulu, Nancholi and Ntonda (not found in Blantyre in DHIS2); Soche Health Centre, Biwi Health Centre, Kaluluma HC and Mzuzu Central Hospital (no safe candidate); Chilomoni and Zingwangwa (each has two DHIS2 records, a health centre and a BLM clinic, and the choice was not guessed). Biwi Health Centre is the tracker's only "In Progress" row, so the app shows 0 in progress. Resolve them in `database/manual_matches.sql`.
 - The tracker has no DHIS2 codes, so matching is by name. Core-name and fuzzy matches are listed by `match_tracker.sql` for review. Kamuzu Central Hospital is matched by hand to DHIS2's "Lilongwe Central Hospital".
 - **No support-officer data.** Nearest-officer and far-from-officer analysis is built and tested, but it only runs once real officer locations are loaded. Until then those parts of the app are hidden.
@@ -166,7 +166,7 @@ Safety rules used in this project: no code is run through the `execute_code` too
 app/        FastAPI app (config, db pool, schemas, endpoints)
 database/   setup.sql and the loading / matching / analysis SQL
 scripts/    loaders, xlsx converter, QGIS cross-check
-frontend/   index.html + vendored Leaflet and Chart.js
+frontend/   index.html + vendored Leaflet
 qgis/       project file and QML styles
 tests/      API tests
 ```
