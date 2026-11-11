@@ -1,14 +1,25 @@
 -- FacilityGeo: rollout tables (local PostgreSQL + PostGIS)
--- Safe to re-run: every statement is IF NOT EXISTS.
--- Run as a superuser (needed once for CREATE EXTENSION):
+-- Safe to re-run: every statement is IF NOT EXISTS. Works on an empty database.
+-- Run as the database owner (or a superuser; CREATE EXTENSION needs it once):
 --   psql -h localhost -d facilitygeo -f database/setup.sql
 --
--- NOTE: districts and support_officers already exist from the sample seed.
--- Later tasks extend them (base_location, HDX polygons); this file only adds
--- new objects. Roles and passwords are NOT created here (see README).
+-- Roles and passwords are NOT created here (see README). The application role
+-- `geo` is granted data access at the end if it exists.
 
 CREATE EXTENSION IF NOT EXISTS postgis;
-CREATE EXTENSION IF NOT EXISTS pg_trgm;   -- fuzzy name matching (task 3)
+CREATE EXTENSION IF NOT EXISTS pg_trgm;   -- fuzzy name matching (tracker matching)
+
+-- Support officers (fictional; filled in by database/assign_officers.sql).
+CREATE TABLE IF NOT EXISTS support_officers (
+    id            SERIAL PRIMARY KEY,
+    name          VARCHAR(120) NOT NULL,
+    latitude      DOUBLE PRECISION NOT NULL,
+    longitude     DOUBLE PRECISION NOT NULL,
+    geom          GEOMETRY(Point, 4326) NOT NULL,
+    base_location TEXT,
+    is_simulated  BOOLEAN NOT NULL DEFAULT TRUE
+);
+CREATE INDEX IF NOT EXISTS officers_geom_gix ON support_officers USING GIST (geom);
 
 -- Staging: DHIS2 org units exactly as exported (level 4 facilities).
 -- No code column in the export: the DHIS2 UID is the id.
@@ -69,8 +80,6 @@ CREATE TABLE IF NOT EXISTS facilities (
     match_method       TEXT,                -- code | exact_name | fuzzy_name | manual
     geom               GEOMETRY(Point, 4326) NOT NULL
 );
--- Name is facilities_gix (not facilities_geom_gix): that name is already used
--- by the sample health_facilities table and IF NOT EXISTS would silently skip it.
 CREATE INDEX IF NOT EXISTS facilities_gix ON facilities USING GIST (geom);
 -- Lets ST_DWithin(geom::geography, ...) (radius searches, metres) use an index.
 CREATE INDEX IF NOT EXISTS facilities_geog_gix ON facilities USING GIST ((geom::geography));
@@ -79,9 +88,8 @@ CREATE INDEX IF NOT EXISTS facilities_status_idx ON facilities (deployment_statu
 CREATE INDEX IF NOT EXISTS facilities_officer_idx ON facilities (support_officer_id);
 
 -- HDX district polygons, used for drawing and for the "inside its district"
--- check. Separate from the sample `districts` table, which other sample
--- tables reference. One row per HDX district (28); Mzimba is a single polygon
--- here while DHIS2 splits it into North and South.
+-- check. One row per HDX district (28); Mzimba is a single polygon here while
+-- DHIS2 splits it into North and South.
 CREATE TABLE IF NOT EXISTS districts_hdx (
     id      SERIAL PRIMARY KEY,
     name    TEXT NOT NULL UNIQUE,
@@ -90,8 +98,7 @@ CREATE TABLE IF NOT EXISTS districts_hdx (
 );
 CREATE INDEX IF NOT EXISTS districts_hdx_gix ON districts_hdx USING GIST (geom);
 
--- Support officers: the sample table is extended, not replaced. Officers are
--- fictional (simulated) and based at district HQs; see database/assign_officers.sql.
+-- Older databases created support_officers without these two columns.
 ALTER TABLE support_officers ADD COLUMN IF NOT EXISTS base_location TEXT;
 ALTER TABLE support_officers ADD COLUMN IF NOT EXISTS is_simulated BOOLEAN NOT NULL DEFAULT TRUE;
 

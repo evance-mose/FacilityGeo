@@ -8,16 +8,26 @@
 
 \set ON_ERROR_STOP on
 
--- The three sample officers keep their ids; they just get a base_location.
-UPDATE support_officers SET base_location = 'Lilongwe (district HQ)'  WHERE name = 'Thandiwe Banda';
-UPDATE support_officers SET base_location = 'Blantyre (district HQ)'  WHERE name = 'Chikondi Phiri';
-UPDATE support_officers SET base_location = 'Mzuzu (Mzimba North HQ)' WHERE name = 'Mwai Nyirenda';
+-- Four fictional officers. Existing rows (matched by name) are only updated
+-- with their base_location, so ids and facility assignments are preserved.
+INSERT INTO support_officers (name, latitude, longitude, geom, base_location, is_simulated)
+SELECT v.name, v.lat, v.lon, ST_SetSRID(ST_MakePoint(v.lon, v.lat), 4326), v.base, TRUE
+FROM (VALUES
+    ('Thandiwe Banda',  -13.962, 33.787, 'Lilongwe (district HQ)'),
+    ('Chikondi Phiri',  -15.786, 35.008, 'Blantyre (district HQ)'),
+    ('Mwai Nyirenda',   -11.458, 34.015, 'Mzuzu (Mzimba North HQ)'),
+    ('Yamikani Chirwa', -15.386, 35.319, 'Zomba (district HQ)')
+) AS v(name, lat, lon, base)
+WHERE NOT EXISTS (SELECT 1 FROM support_officers o WHERE o.name = v.name);
 
--- A fourth officer in Zomba (district_id 5 = Zomba in the sample districts table).
-INSERT INTO support_officers (name, district_id, latitude, longitude, geom, base_location, is_simulated)
-SELECT 'Yamikani Chirwa', 5, -15.386, 35.319, ST_SetSRID(ST_MakePoint(35.319, -15.386), 4326),
-       'Zomba (district HQ)', TRUE
-WHERE NOT EXISTS (SELECT 1 FROM support_officers WHERE name = 'Yamikani Chirwa');
+UPDATE support_officers o SET base_location = v.base
+FROM (VALUES
+    ('Thandiwe Banda',  'Lilongwe (district HQ)'),
+    ('Chikondi Phiri',  'Blantyre (district HQ)'),
+    ('Mwai Nyirenda',   'Mzuzu (Mzimba North HQ)'),
+    ('Yamikani Chirwa', 'Zomba (district HQ)')
+) AS v(name, base)
+WHERE o.name = v.name AND o.base_location IS DISTINCT FROM v.base;
 
 -- Assign every facility to its nearest officer. The <-> KNN operator ranks by
 -- degrees (index-assisted, slightly wrong east-west), so it only picks the 3
