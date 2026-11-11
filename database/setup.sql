@@ -72,6 +72,8 @@ CREATE TABLE IF NOT EXISTS facilities (
 -- Name is facilities_gix (not facilities_geom_gix): that name is already used
 -- by the sample health_facilities table and IF NOT EXISTS would silently skip it.
 CREATE INDEX IF NOT EXISTS facilities_gix ON facilities USING GIST (geom);
+-- Lets ST_DWithin(geom::geography, ...) (radius searches, metres) use an index.
+CREATE INDEX IF NOT EXISTS facilities_geog_gix ON facilities USING GIST ((geom::geography));
 CREATE INDEX IF NOT EXISTS facilities_district_idx ON facilities (district);
 CREATE INDEX IF NOT EXISTS facilities_status_idx ON facilities (deployment_status);
 CREATE INDEX IF NOT EXISTS facilities_officer_idx ON facilities (support_officer_id);
