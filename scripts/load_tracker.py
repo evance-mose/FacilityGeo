@@ -22,8 +22,8 @@ from psycopg2.extras import execute_values
 from load_orgunits import connect
 
 ALIASES = {
-    "facility_name": {"facilityname", "name", "facility", "healthfacility", "site", "sitename"},
-    "district": {"district", "districtname"},
+    "facility_name": {"facilityname", "name", "facility", "healthfacility", "site", "sitename", "facilitysite"},
+    "district": {"district", "districtname", "districtlocation"},
     "facility_code": {"dhis2code", "code", "facilitycode", "uid", "dhis2uid", "orgunitid", "orgunituid"},
     "status": {"status", "deploymentstatus", "rolloutstatus", "implementationstatus", "golivestatus"},
     "training": {"endusertraining", "training", "trainingstatus", "usertraining"},
