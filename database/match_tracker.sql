@@ -6,6 +6,7 @@
 -- Order (a row is only matched once):
 --   1. code        tracker code = DHIS2 UID
 --   2. exact_name  same normalised name in a compatible district, and unambiguous
+--   2b. core_name  same name once facility-type words are removed, unique in the district
 --   3. fuzzy_name  pg_trgm similarity >= 0.55 with a clear winner (margin >= 0.10)
 --   4. manual      database/manual_matches.sql (decisions made by hand)
 -- Anything else stays unmatched and is listed in the review reports below.
@@ -58,6 +59,38 @@ FROM (
 WHERE t.row_id = c.row_id
   AND c.facility_code NOT IN (SELECT facility_id FROM tracker_raw WHERE facility_id IS NOT NULL);
 
+-- 2b. core name: the name without facility-type words ("Chabvala" vs
+--     "Chabvala Health Centre"), spaces removed ("Gate way" vs "Gateway").
+--     Accepted only when exactly one unmatched facility in the district has
+--     that core and no other unmatched tracker row has it too.
+--     DHIS2 often adds the district in brackets ("Bua Health Centre (Kasungu)"),
+--     so a trailing district name is dropped too (d = normalised district).
+CREATE OR REPLACE FUNCTION pg_temp.core(t TEXT, d TEXT) RETURNS TEXT LANGUAGE sql IMMUTABLE AS $$
+    SELECT replace(btrim(regexp_replace(
+        regexp_replace(regexp_replace(t, '\y' || d || '$', ' '),
+            '\y(health|centre|center|dispensary|clinic|hospital|community|post|blm|mission|urban|rural)\y', ' ', 'g'),
+        '\s+', ' ', 'g')), ' ', '')
+$$;
+UPDATE tracker_raw t SET facility_id = c.facility_code, match_method = 'core_name'
+FROM (
+    SELECT tn.row_id, min(fn.facility_code) AS facility_code
+    FROM t_n tn
+    JOIN f_n fn ON pg_temp.core(fn.nname, fn.ndist) = pg_temp.core(tn.nname, tn.ndist)
+               AND pg_temp.core(tn.nname, tn.ndist) <> ''
+               -- a tracker name that states a type must agree on hospital / not hospital
+               AND (tn.nname !~ '\y(health|centre|center|dispensary|clinic|hospital|post)\y'
+                    OR (tn.nname ~ '\yhospital\y') = (fn.nname ~ '\yhospital\y'))
+               AND (fn.ndist = tn.ndist OR (tn.ndist = 'mzimba' AND fn.ndist LIKE 'mzimba %'))
+    WHERE tn.row_id IN (SELECT row_id FROM tracker_raw WHERE facility_id IS NULL)
+      AND fn.facility_code NOT IN (SELECT facility_id FROM tracker_raw WHERE facility_id IS NOT NULL)
+      AND (SELECT count(*) FROM t_n o
+           WHERE o.row_id IN (SELECT row_id FROM tracker_raw WHERE facility_id IS NULL)
+             AND pg_temp.core(o.nname, o.ndist) = pg_temp.core(tn.nname, tn.ndist) AND o.ndist = tn.ndist) = 1
+    GROUP BY tn.row_id
+    HAVING count(*) = 1
+) c
+WHERE t.row_id = c.row_id;
+
 -- 3. fuzzy: best candidate among facilities not yet matched, same district.
 CREATE TEMP TABLE fuzzy_c AS
     SELECT tn.row_id, b.facility_code, b.sim, b.sim - coalesce(b.sim2, 0) AS margin
@@ -98,13 +131,13 @@ FROM tracker_raw GROUP BY 1 ORDER BY 2 DESC;
 SELECT facility_id, count(*) AS rows, string_agg(facility_name || ' [' || row_id || ']', ' | ') AS tracker_names
 FROM tracker_raw WHERE facility_id IS NOT NULL GROUP BY 1 HAVING count(*) > 1;
 
-\echo '== Fuzzy matches to eyeball (lowest similarity first) =='
+\echo '== Core-name and fuzzy matches to eyeball (lowest similarity first) =='
 SELECT t.row_id, t.facility_name AS tracker_name, t.district AS tracker_district,
        f.name AS matched_facility, f.district AS matched_district,
        round(similarity(pg_temp.norm(t.facility_name), pg_temp.norm(f.name))::numeric, 2) AS similarity
 FROM tracker_raw t JOIN facilities f ON f.facility_code = t.facility_id
-WHERE t.match_method = 'fuzzy_name'
-ORDER BY similarity LIMIT 15;
+WHERE t.match_method IN ('core_name', 'fuzzy_name')
+ORDER BY t.match_method, similarity LIMIT 60;
 
 \echo '== UNMATCHED tracker rows: review by hand, then add them to database/manual_matches.sql =='
 SELECT t.row_id, t.facility_name, t.district,

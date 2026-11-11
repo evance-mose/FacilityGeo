@@ -16,9 +16,12 @@ CREATE TEMP TABLE IF NOT EXISTS manual_matches (
 );
 TRUNCATE manual_matches;
 
--- Decisions below were made for data/tracker_simulated.csv. A different
--- tracker simply will not match these names and they do nothing.
+-- Decisions below were made for the simulated tracker and the real one. A
+-- different tracker simply will not match these names and they do nothing.
 INSERT INTO manual_matches (tracker_name, tracker_district, facility_code) VALUES
+    -- Real tracker: Kamuzu Central Hospital is listed in DHIS2 under its old
+    -- name, Lilongwe Central Hospital.
+    ('Kamuzu Central Hospital', 'Lilongwe', 'cFiiWO0mSVO'),
     -- DHIS2 has two near-identical records at one point (differ only by brackets):
     ('Chizumulo (St Marys) Health Centre', 'Likoma', 'Kzo3T3VQUwH'),
     ('Chizumulo St Marys Heatlh Centre',   'Likoma', 'XXjX57Xslam'),
