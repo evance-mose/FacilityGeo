@@ -22,15 +22,34 @@ CREATE TABLE IF NOT EXISTS orgunits_raw (
 CREATE INDEX IF NOT EXISTS orgunits_raw_geom_gix ON orgunits_raw USING GIST (geom);
 CREATE INDEX IF NOT EXISTS orgunits_raw_name_trgm ON orgunits_raw USING GIN (name gin_trgm_ops);
 
--- Staging: the rollout tracker CSV. All text on purpose; cleaned in task 3.
--- facility_id / match_method are filled in during matching.
--- Columns are added when the CSV is loaded (header-driven), so only the
--- matching columns are fixed here.
+-- Staging: the rollout tracker CSV. All text on purpose; cleaned when
+-- facilities is updated. scripts/load_tracker.py maps the CSV headers onto
+-- these columns. facility_id / match_method are filled in during matching
+-- (database/match_tracker.sql); facility_id holds the DHIS2 UID.
 CREATE TABLE IF NOT EXISTS tracker_raw (
-    row_id        SERIAL PRIMARY KEY,
-    facility_id   TEXT,
-    match_method  TEXT
+    row_id          SERIAL PRIMARY KEY,
+    facility_name   TEXT,
+    district        TEXT,
+    facility_code   TEXT,
+    status          TEXT,
+    go_live_date    TEXT,
+    devices         TEXT,
+    staff_trained   TEXT,
+    internet        TEXT,
+    power           TEXT,
+    facility_id     TEXT,
+    match_method    TEXT
 );
+-- Older databases created tracker_raw with only the two matching columns.
+ALTER TABLE tracker_raw ADD COLUMN IF NOT EXISTS facility_name TEXT;
+ALTER TABLE tracker_raw ADD COLUMN IF NOT EXISTS district      TEXT;
+ALTER TABLE tracker_raw ADD COLUMN IF NOT EXISTS facility_code TEXT;
+ALTER TABLE tracker_raw ADD COLUMN IF NOT EXISTS status        TEXT;
+ALTER TABLE tracker_raw ADD COLUMN IF NOT EXISTS go_live_date  TEXT;
+ALTER TABLE tracker_raw ADD COLUMN IF NOT EXISTS devices       TEXT;
+ALTER TABLE tracker_raw ADD COLUMN IF NOT EXISTS staff_trained TEXT;
+ALTER TABLE tracker_raw ADD COLUMN IF NOT EXISTS internet      TEXT;
+ALTER TABLE tracker_raw ADD COLUMN IF NOT EXISTS power         TEXT;
 
 -- Clean table the API reads. facility_code = DHIS2 UID.
 CREATE TABLE IF NOT EXISTS facilities (
