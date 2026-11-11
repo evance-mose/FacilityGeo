@@ -56,3 +56,26 @@ CREATE INDEX IF NOT EXISTS facilities_gix ON facilities USING GIST (geom);
 CREATE INDEX IF NOT EXISTS facilities_district_idx ON facilities (district);
 CREATE INDEX IF NOT EXISTS facilities_status_idx ON facilities (deployment_status);
 CREATE INDEX IF NOT EXISTS facilities_officer_idx ON facilities (support_officer_id);
+
+-- HDX district polygons, used for drawing and for the "inside its district"
+-- check. Separate from the sample `districts` table, which other sample
+-- tables reference. One row per HDX district (28); Mzimba is a single polygon
+-- here while DHIS2 splits it into North and South.
+CREATE TABLE IF NOT EXISTS districts_hdx (
+    id      SERIAL PRIMARY KEY,
+    name    TEXT NOT NULL UNIQUE,
+    region  TEXT,
+    geom    GEOMETRY(MultiPolygon, 4326) NOT NULL
+);
+CREATE INDEX IF NOT EXISTS districts_hdx_gix ON districts_hdx USING GIST (geom);
+
+-- Application role `geo`: data access only, no schema changes. Skipped if the
+-- role has not been created yet.
+DO $$
+BEGIN
+    IF EXISTS (SELECT 1 FROM pg_roles WHERE rolname = 'geo') THEN
+        GRANT SELECT, INSERT, UPDATE, DELETE ON
+            orgunits_raw, tracker_raw, facilities, districts_hdx TO geo;
+        GRANT USAGE, SELECT ON ALL SEQUENCES IN SCHEMA public TO geo;
+    END IF;
+END $$;
